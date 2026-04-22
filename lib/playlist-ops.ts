@@ -67,8 +67,9 @@ export async function ingestM3U(playlistId: number, content: string) {
 
   // upsert channels
   const existingChannels = await db.select().from(channels).where(eq(channels.playlistId, playlistId))
-  const existingById = new Map(existingChannels.filter(c => c.tvgId).map(c => [c.tvgId!, c]))
-  const existingByFallback = new Map(existingChannels.map(c => [`${c.tvgName}||${c.streamUrl}`, c]))
+  const existingByTvgId = new Map(existingChannels.filter(c => c.tvgId).map(c => [c.tvgId!, c]))
+  const existingByTvgName = new Map(existingChannels.filter(c => c.tvgName).map(c => [c.tvgName, c]))
+  const existingByDisplayName = new Map(existingChannels.map(c => [c.displayName, c]))
 
   let added = 0
   let updated = 0
@@ -79,9 +80,10 @@ export async function ingestM3U(playlistId: number, content: string) {
     const groupId = groupIdMap.get(ch.groupTitle)
     if (!groupId) continue
 
-    const existing = ch.tvgId
-      ? existingById.get(ch.tvgId)
-      : existingByFallback.get(`${ch.tvgName}||${ch.streamUrl}`)
+    const existing =
+      (ch.tvgId && existingByTvgId.get(ch.tvgId)) ||
+      (ch.tvgName && existingByTvgName.get(ch.tvgName)) ||
+      existingByDisplayName.get(ch.displayName)
 
     if (existing) {
       seenIds.add(existing.id)
