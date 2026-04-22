@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-IMAGE="emmettmoore/iptv-manager"
+IMAGE="emmettmoore/channeler"
 TAG="${1:-latest}"
 FULL="${IMAGE}:${TAG}"
 

@@ -43,7 +43,7 @@ function CopyButton({ text }: { text: string }) {
   return (
     <button
       onClick={copy}
-      className="shrink-0 text-xs px-2 py-0.5 rounded bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-500 dark:text-gray-400 transition-colors"
+      className="shrink-0 text-xs px-2 py-0.5 rounded bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 text-gray-500 dark:text-gray-400 transition-colors"
     >
       {copied ? 'Copied!' : 'Copy'}
     </button>
@@ -52,10 +52,12 @@ function CopyButton({ text }: { text: string }) {
 
 function UrlRow({ label, url }: { label: string; url: string }) {
   return (
-    <div className="flex items-center gap-2 mt-1">
-      <span className="text-xs text-gray-400 dark:text-gray-500 w-8 shrink-0">{label}</span>
-      <code className="text-xs text-gray-600 dark:text-gray-300 truncate flex-1">{url}</code>
-      <CopyButton text={url} />
+    <div className="flex items-center gap-2 mt-1.5">
+      <span className="text-xs font-medium text-gray-400 dark:text-gray-500 w-8 shrink-0">{label}</span>
+      <div className="flex items-center flex-1 min-w-0 gap-2 bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded px-3 py-1.5">
+        <code className="text-xs text-gray-500 dark:text-gray-400 truncate flex-1 select-all">{url}</code>
+        <CopyButton text={url} />
+      </div>
     </div>
   )
 }

@@ -1,4 +1,4 @@
-# IPTV Manager
+# Channeler
 
 Self-hosted web app for managing M3U IPTV playlists. Import playlists from a URL or file, filter/rename groups and channels, then point your IPTV player at the output proxy URLs.
 
@@ -16,13 +16,13 @@ Self-hosted web app for managing M3U IPTV playlists. Import playlists from a URL
 ## Quick start (Docker)
 
 ```bash
-docker build -t iptv-manager .
+docker build -t channeler .
 
 docker run -d \
   -p 3000:3000 \
   -v /your/host/path/data:/app/data \
-  --name iptv-manager \
-  iptv-manager
+  --name channeler \
+  channeler
 ```
 
 Open [http://localhost:3000](http://localhost:3000).
