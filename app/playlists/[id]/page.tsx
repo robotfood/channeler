@@ -41,15 +41,16 @@ interface PlaylistData {
 
 const inputCls = 'w-full bg-gray-100 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded px-2 py-1.5 text-sm focus:outline-none focus:border-blue-500'
 
-function SortableGroup({ group, selected, onSelect, onToggle, onRename, channelCount, enabledCount, mergeCount }: {
+function SortableGroup({ group, selected, merging, mergeSelected, onSelect, onToggle, onRename, channelCount, enabledCount }: {
   group: Group
   selected: boolean
+  merging: boolean
+  mergeSelected: boolean
   onSelect: () => void
   onToggle: () => void
   onRename: (name: string) => void
   channelCount: number
   enabledCount: number
-  mergeCount: number
 }) {
   const { attributes, listeners, setNodeRef, transform, transition } = useSortable({ id: group.id })
   const [editing, setEditing] = useState(false)
@@ -57,14 +58,28 @@ function SortableGroup({ group, selected, onSelect, onToggle, onRename, channelC
 
   const style = { transform: CSS.Transform.toString(transform), transition }
 
+  let rowCls = 'flex items-center gap-2 px-3 py-2 rounded cursor-pointer '
+  if (merging) {
+    rowCls += mergeSelected
+      ? 'bg-blue-100 dark:bg-blue-900/40 ring-1 ring-blue-400 dark:ring-blue-600 '
+      : 'hover:bg-gray-100 dark:hover:bg-gray-800 '
+  } else {
+    rowCls += selected ? 'bg-gray-200 dark:bg-gray-700 ' : 'hover:bg-gray-100 dark:hover:bg-gray-800 '
+  }
+
   return (
-    <div ref={setNodeRef} style={style}
-      className={`flex items-center gap-2 px-3 py-2 rounded cursor-pointer ${selected ? 'bg-gray-200 dark:bg-gray-700' : 'hover:bg-gray-100 dark:hover:bg-gray-800'}`}
-      onClick={onSelect}>
-      <span {...attributes} {...listeners} className="text-gray-300 dark:text-gray-600 hover:text-gray-500 dark:hover:text-gray-400 cursor-grab active:cursor-grabbing text-xs select-none">⠿</span>
-      <input type="checkbox" checked={group.enabled} onChange={onToggle}
-        onClick={e => e.stopPropagation()}
-        className="rounded border-gray-300 dark:border-gray-600 accent-blue-500 shrink-0" />
+    <div ref={setNodeRef} style={style} className={rowCls} onClick={onSelect}>
+      {!merging && (
+        <span {...attributes} {...listeners} className="text-gray-300 dark:text-gray-600 hover:text-gray-500 dark:hover:text-gray-400 cursor-grab active:cursor-grabbing text-xs select-none">⠿</span>
+      )}
+      {merging
+        ? <span className={`w-4 h-4 rounded-full border-2 shrink-0 flex items-center justify-center ${mergeSelected ? 'border-blue-500 bg-blue-500' : 'border-gray-300 dark:border-gray-600'}`}>
+            {mergeSelected && <span className="text-white text-xs">✓</span>}
+          </span>
+        : <input type="checkbox" checked={group.enabled} onChange={onToggle}
+            onClick={e => e.stopPropagation()}
+            className="rounded border-gray-300 dark:border-gray-600 accent-blue-500 shrink-0" />
+      }
       {editing
         ? <input autoFocus value={draft}
             onChange={e => setDraft(e.target.value)}
@@ -72,22 +87,12 @@ function SortableGroup({ group, selected, onSelect, onToggle, onRename, channelC
             onKeyDown={e => { if (e.key === 'Enter') { setEditing(false); onRename(draft) } if (e.key === 'Escape') { setEditing(false); setDraft(group.displayName) } }}
             onClick={e => e.stopPropagation()}
             className="flex-1 bg-gray-100 dark:bg-gray-700 rounded px-2 py-0.5 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500 min-w-0" />
-        : <span onDoubleClick={e => { e.stopPropagation(); setEditing(true) }}
-            className="flex-1 text-sm truncate" title={group.originalName !== group.displayName ? `Source: ${group.originalName}` : 'Double-click to rename'}>
+        : <span onDoubleClick={e => { if (!merging) { e.stopPropagation(); setEditing(true) } }}
+            className="flex-1 text-sm truncate" title="Double-click to rename">
             {group.displayName}
-            {group.originalName !== group.displayName && (
-              <span className="ml-1 text-xs text-gray-400 dark:text-gray-500">({group.originalName})</span>
-            )}
           </span>
       }
-      <div className="flex items-center gap-1 shrink-0">
-        {mergeCount > 1 && (
-          <span className="text-xs px-1 rounded bg-blue-100 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400" title="Merged in output">
-            ×{mergeCount}
-          </span>
-        )}
-        <span className="text-xs text-gray-400 dark:text-gray-500">{enabledCount}/{channelCount}</span>
-      </div>
+      <span className="text-xs text-gray-400 dark:text-gray-500 shrink-0">{enabledCount}/{channelCount}</span>
     </div>
   )
 }
@@ -95,11 +100,13 @@ function SortableGroup({ group, selected, onSelect, onToggle, onRename, channelC
 export default function PlaylistEditor({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params)
   const [data, setData] = useState<PlaylistData | null>(null)
-  const [selectedGroupIds, setSelectedGroupIds] = useState<number[]>([])
+  const [selectedGroupId, setSelectedGroupId] = useState<number | null>(null)
   const [groupSearch, setGroupSearch] = useState('')
   const [channelSearch, setChannelSearch] = useState('')
   const [refreshing, setRefreshing] = useState<'m3u' | 'epg' | null>(null)
   const [toast, setToast] = useState('')
+  const [merging, setMerging] = useState(false)
+  const [mergeIds, setMergeIds] = useState<number[]>([])
 
   const sensors = useSensors(useSensor(PointerSensor))
 
@@ -108,26 +115,9 @@ export default function PlaylistEditor({ params }: { params: Promise<{ id: strin
   useEffect(() => {
     fetch(`/api/playlists/${id}`).then(r => r.json()).then(d => {
       setData(d)
-      if (d.groups.length > 0) setSelectedGroupIds([d.groups[0].id])
+      if (d.groups.length > 0) setSelectedGroupId(d.groups[0].id)
     })
   }, [id])
-
-  const mergeMap = useCallback((groups: Group[]) => {
-    const map = new Map<string, Group[]>()
-    for (const g of groups) {
-      if (!map.has(g.displayName)) map.set(g.displayName, [])
-      map.get(g.displayName)!.push(g)
-    }
-    return map
-  }, [])
-
-  const selectGroup = useCallback((groupId: number, groups: Group[]) => {
-    const group = groups.find(g => g.id === groupId)
-    if (!group) return
-    const merged = mergeMap(groups).get(group.displayName) ?? []
-    setSelectedGroupIds(merged.map(g => g.id))
-    setChannelSearch('')
-  }, [mergeMap])
 
   const patchGroup = useCallback(async (groupId: number, updates: Partial<Group>) => {
     setData(d => d ? { ...d, groups: d.groups.map(g => g.id === groupId ? { ...g, ...updates } : g) } : d)
@@ -152,6 +142,49 @@ export default function PlaylistEditor({ params }: { params: Promise<{ id: strin
     })))
   }, [data])
 
+  function handleGroupClick(groupId: number) {
+    if (!merging) {
+      setSelectedGroupId(groupId)
+      setChannelSearch('')
+      return
+    }
+    setMergeIds(prev => {
+      if (prev.includes(groupId)) return prev.filter(id => id !== groupId)
+      if (prev.length >= 2) return prev
+      return [...prev, groupId]
+    })
+  }
+
+  async function confirmMerge() {
+    if (!data || mergeIds.length !== 2) return
+    const [targetId, sourceId] = mergeIds
+    const target = data.groups.find(g => g.id === targetId)!
+    const source = data.groups.find(g => g.id === sourceId)!
+
+    await fetch('/api/groups/merge', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ targetId, sourceId }),
+    })
+
+    // Update local state: move source channels to target, remove source group
+    setData(d => d ? {
+      ...d,
+      groups: d.groups.filter(g => g.id !== sourceId),
+      channels: d.channels.map(c => c.groupId === sourceId ? { ...c, groupId: targetId } : c),
+    } : d)
+
+    setMerging(false)
+    setMergeIds([])
+    setSelectedGroupId(targetId)
+    showToast(`Merged "${source.displayName}" into "${target.displayName}"`)
+  }
+
+  function cancelMerge() {
+    setMerging(false)
+    setMergeIds([])
+  }
+
   async function refreshM3U() {
     setRefreshing('m3u')
     const res = await fetch(`/api/playlists/${id}/refresh-m3u`, { method: 'POST' })
@@ -175,9 +208,9 @@ export default function PlaylistEditor({ params }: { params: Promise<{ id: strin
   }
 
   async function bulkToggleGroup(enabled: boolean) {
-    if (!data || selectedGroupIds.length === 0) return
-    const chs = data.channels.filter(c => selectedGroupIds.includes(c.groupId))
-    setData(d => d ? { ...d, channels: d.channels.map(c => selectedGroupIds.includes(c.groupId) ? { ...c, enabled } : c) } : d)
+    if (!data || !selectedGroupId) return
+    const chs = data.channels.filter(c => c.groupId === selectedGroupId)
+    setData(d => d ? { ...d, channels: d.channels.map(c => c.groupId === selectedGroupId ? { ...c, enabled } : c) } : d)
     await Promise.all(chs.map(c => fetch(`/api/channels/${c.id}`, {
       method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled }),
     })))
@@ -193,15 +226,14 @@ export default function PlaylistEditor({ params }: { params: Promise<{ id: strin
 
   if (!data) return <div className="text-gray-500 dark:text-gray-400">Loading...</div>
 
-  const mm = mergeMap(data.groups)
   const filteredGroups = data.groups.filter(g => g.displayName.toLowerCase().includes(groupSearch.toLowerCase()))
-  const selectedGroups = data.groups.filter(g => selectedGroupIds.includes(g.id))
-  const groupChannels = data.channels.filter(c => selectedGroupIds.includes(c.groupId))
+  const selectedGroup = data.groups.find(g => g.id === selectedGroupId)
+  const groupChannels = data.channels.filter(c => c.groupId === selectedGroupId)
   const filteredChannels = groupChannels.filter(c => c.displayName.toLowerCase().includes(channelSearch.toLowerCase()))
   const totalEnabled = data.channels.filter(c => c.enabled).length
 
-  const selectedDisplayName = selectedGroups[0]?.displayName ?? null
-  const isMerged = selectedDisplayName !== null && (mm.get(selectedDisplayName)?.length ?? 0) > 1
+  const mergeTarget = data.groups.find(g => g.id === mergeIds[0])
+  const mergeSource = data.groups.find(g => g.id === mergeIds[1])
 
   return (
     <div className="flex flex-col h-[calc(100vh-8rem)]">
@@ -235,13 +267,39 @@ export default function PlaylistEditor({ params }: { params: Promise<{ id: strin
         {/* Left: groups */}
         <div className="w-72 flex flex-col bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-lg overflow-hidden shrink-0">
           <div className="p-3 border-b border-gray-200 dark:border-gray-800 space-y-2">
-            <input value={groupSearch} onChange={e => setGroupSearch(e.target.value)}
-              placeholder="Search groups..." className={inputCls} />
-            <div className="flex gap-2 text-xs">
-              <button onClick={() => bulkToggleAllGroups(true)} className="text-blue-600 dark:text-blue-400 hover:text-blue-500 dark:hover:text-blue-300">Enable all</button>
-              <span className="text-gray-300 dark:text-gray-700">·</span>
-              <button onClick={() => bulkToggleAllGroups(false)} className="text-blue-600 dark:text-blue-400 hover:text-blue-500 dark:hover:text-blue-300">Disable all</button>
-            </div>
+            {merging ? (
+              <div className="space-y-2">
+                <p className="text-xs text-gray-500 dark:text-gray-400">
+                  {mergeIds.length === 0 && 'Select the group to merge into'}
+                  {mergeIds.length === 1 && `Into: "${mergeTarget?.displayName}" — now select the group to absorb`}
+                  {mergeIds.length === 2 && `Merge "${mergeSource?.displayName}" into "${mergeTarget?.displayName}"`}
+                </p>
+                <div className="flex gap-2">
+                  <button
+                    onClick={confirmMerge}
+                    disabled={mergeIds.length !== 2}
+                    className="flex-1 text-xs px-2 py-1.5 rounded bg-blue-600 hover:bg-blue-500 disabled:opacity-40 text-white font-medium transition-colors">
+                    Merge
+                  </button>
+                  <button onClick={cancelMerge}
+                    className="flex-1 text-xs px-2 py-1.5 rounded bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors">
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <>
+                <input value={groupSearch} onChange={e => setGroupSearch(e.target.value)}
+                  placeholder="Search groups..." className={inputCls} />
+                <div className="flex gap-2 text-xs">
+                  <button onClick={() => bulkToggleAllGroups(true)} className="text-blue-600 dark:text-blue-400 hover:text-blue-500 dark:hover:text-blue-300">Enable all</button>
+                  <span className="text-gray-300 dark:text-gray-700">·</span>
+                  <button onClick={() => bulkToggleAllGroups(false)} className="text-blue-600 dark:text-blue-400 hover:text-blue-500 dark:hover:text-blue-300">Disable all</button>
+                  <span className="text-gray-300 dark:text-gray-700">·</span>
+                  <button onClick={() => setMerging(true)} className="text-blue-600 dark:text-blue-400 hover:text-blue-500 dark:hover:text-blue-300">Merge</button>
+                </div>
+              </>
+            )}
           </div>
           <div className="flex-1 overflow-y-auto p-2 space-y-0.5">
             <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
@@ -249,16 +307,16 @@ export default function PlaylistEditor({ params }: { params: Promise<{ id: strin
                 {filteredGroups.map(g => {
                   const gChannels = data.channels.filter(c => c.groupId === g.id)
                   const gEnabled = gChannels.filter(c => c.enabled).length
-                  const mergeCount = mm.get(g.displayName)?.length ?? 1
                   return (
                     <SortableGroup key={g.id} group={g}
-                      selected={selectedGroupIds.includes(g.id)}
-                      onSelect={() => selectGroup(g.id, data.groups)}
+                      selected={selectedGroupId === g.id}
+                      merging={merging}
+                      mergeSelected={mergeIds.includes(g.id)}
+                      onSelect={() => handleGroupClick(g.id)}
                       onToggle={() => patchGroup(g.id, { enabled: !g.enabled })}
                       onRename={name => patchGroup(g.id, { displayName: name })}
                       channelCount={gChannels.length}
                       enabledCount={gEnabled}
-                      mergeCount={mergeCount}
                     />
                   )
                 })}
@@ -271,18 +329,11 @@ export default function PlaylistEditor({ params }: { params: Promise<{ id: strin
         <div className="flex-1 flex flex-col bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-lg overflow-hidden">
           <div className="p-3 border-b border-gray-200 dark:border-gray-800 space-y-2">
             <div className="flex items-center justify-between gap-2">
-              <div className="flex items-center gap-2 min-w-0">
-                <span className="text-sm font-medium text-gray-700 dark:text-gray-300 truncate">
-                  {selectedDisplayName ?? 'Select a group'}
-                </span>
-                {isMerged && (
-                  <span className="text-xs px-1.5 py-0.5 rounded bg-blue-100 dark:bg-blue-900/40 text-blue-600 dark:text-blue-400 shrink-0">
-                    {mm.get(selectedDisplayName!)!.length} sources merged
-                  </span>
-                )}
-              </div>
-              {selectedGroupIds.length > 0 && (
-                <div className="flex gap-2 text-xs shrink-0">
+              <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                {selectedGroup?.displayName ?? 'Select a group'}
+              </span>
+              {selectedGroupId && (
+                <div className="flex gap-2 text-xs">
                   <button onClick={() => bulkToggleGroup(true)} className="text-blue-600 dark:text-blue-400 hover:text-blue-500 dark:hover:text-blue-300">Enable all</button>
                   <span className="text-gray-300 dark:text-gray-700">·</span>
                   <button onClick={() => bulkToggleGroup(false)} className="text-blue-600 dark:text-blue-400 hover:text-blue-500 dark:hover:text-blue-300">Disable all</button>
