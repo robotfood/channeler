@@ -31,6 +31,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   if ('m3uUrl' in body) updates.m3uUrl = body.m3uUrl
   if ('epgUrl' in body) updates.epgUrl = body.epgUrl
   if ('autoRefresh' in body) updates.autoRefresh = body.autoRefresh
+  if ('proxyStreams' in body) updates.proxyStreams = body.proxyStreams
   if ('epgSourceType' in body) updates.epgSourceType = body.epgSourceType
 
   await db.update(playlists).set(updates).where(eq(playlists.id, playlistId))

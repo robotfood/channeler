@@ -1,6 +1,8 @@
 import { sqlite } from './db'
 
 export function runMigrations() {
+  try { sqlite.exec(`ALTER TABLE playlists ADD COLUMN proxy_streams INTEGER NOT NULL DEFAULT 0`) } catch {}
+
   sqlite.exec(`
     CREATE TABLE IF NOT EXISTS playlists (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -12,6 +14,7 @@ export function runMigrations() {
       epg_source_type TEXT,
       epg_last_fetched_at TEXT,
       auto_refresh INTEGER NOT NULL DEFAULT 1,
+      proxy_streams INTEGER NOT NULL DEFAULT 0,
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
 

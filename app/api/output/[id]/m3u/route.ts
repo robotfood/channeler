@@ -5,12 +5,14 @@ import { db } from '@/lib/db'
 import { playlists, groups, channels } from '@/lib/schema'
 import { eq, asc, and } from 'drizzle-orm'
 
-export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   const playlistId = parseInt(id)
 
   const [playlist] = await db.select().from(playlists).where(eq(playlists.id, playlistId))
   if (!playlist) return new NextResponse('Not found', { status: 404 })
+
+  console.log(`[m3u] ${new Date().toISOString()} playlist=${playlist.name} id=${playlistId}`)
 
   const enabledGroups = await db.select().from(groups)
     .where(and(eq(groups.playlistId, playlistId), eq(groups.enabled, true)))
@@ -26,14 +28,17 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     channelsByGroup.get(ch.groupId)!.push(ch)
   }
 
+  const baseUrl = `${req.nextUrl.protocol}//${req.nextUrl.host}`
+
   const lines: string[] = ['#EXTM3U']
   for (const g of enabledGroups) {
     const chs = channelsByGroup.get(g.id) ?? []
     for (const ch of chs) {
       const logo = ch.tvgLogo ? ` tvg-logo="${ch.tvgLogo}"` : ''
       const tvgId = ch.tvgId ? ` tvg-id="${ch.tvgId}"` : ''
+      const streamUrl = playlist.proxyStreams ? `${baseUrl}/api/stream/${ch.id}` : ch.streamUrl
       lines.push(`#EXTINF:-1${tvgId} tvg-name="${ch.displayName}"${logo} group-title="${g.displayName}",${ch.displayName}`)
-      lines.push(ch.streamUrl)
+      lines.push(streamUrl)
     }
   }
 

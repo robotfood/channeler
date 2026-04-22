@@ -12,6 +12,7 @@ interface PlaylistSettings {
   epgUrl: string | null
   epgSourceType: string | null
   autoRefresh: boolean
+  proxyStreams: boolean
 }
 
 const inputCls = 'w-full bg-gray-50 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded px-3 py-2 text-sm focus:outline-none focus:border-blue-500'
@@ -25,6 +26,7 @@ export default function PlaylistSettings({ params }: { params: Promise<{ id: str
   const [m3uUrl, setM3uUrl] = useState('')
   const [epgUrl, setEpgUrl] = useState('')
   const [autoRefresh, setAutoRefresh] = useState(true)
+  const [proxyStreams, setProxyStreams] = useState(false)
   const [saving, setSaving] = useState(false)
   const [toast, setToast] = useState('')
 
@@ -37,6 +39,7 @@ export default function PlaylistSettings({ params }: { params: Promise<{ id: str
       setM3uUrl(d.m3uUrl ?? '')
       setEpgUrl(d.epgUrl ?? '')
       setAutoRefresh(d.autoRefresh)
+      setProxyStreams(d.proxyStreams)
     })
   }, [id])
 
@@ -45,7 +48,7 @@ export default function PlaylistSettings({ params }: { params: Promise<{ id: str
     await fetch(`/api/playlists/${id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, m3uUrl: m3uUrl || null, epgUrl: epgUrl || null, autoRefresh }),
+      body: JSON.stringify({ name, m3uUrl: m3uUrl || null, epgUrl: epgUrl || null, autoRefresh, proxyStreams }),
     })
     showToast('Saved')
     setSaving(false)
@@ -103,6 +106,12 @@ export default function PlaylistSettings({ params }: { params: Promise<{ id: str
           <input type="checkbox" id="autoRefresh" checked={autoRefresh} onChange={e => setAutoRefresh(e.target.checked)}
             className="rounded border-gray-300 dark:border-gray-600 accent-blue-500" />
           <label htmlFor="autoRefresh" className="text-sm text-gray-700 dark:text-gray-300">Include in global auto-refresh</label>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <input type="checkbox" id="proxyStreams" checked={proxyStreams} onChange={e => setProxyStreams(e.target.checked)}
+            className="rounded border-gray-300 dark:border-gray-600 accent-blue-500" />
+          <label htmlFor="proxyStreams" className="text-sm text-gray-700 dark:text-gray-300">Proxy streams through this server</label>
         </div>
 
         <button onClick={save} disabled={saving}
