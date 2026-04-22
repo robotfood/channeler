@@ -24,12 +24,14 @@ function rewriteM3U8(text: string, upstreamUrl: string, baseUrl: string): string
 }
 
 async function logStream(playlistId: number, channelName: string, status: 'success' | 'error', detail?: string) {
+  const msg = detail ?? channelName
+  console.log(`[stream] ${new Date().toISOString()} channel=${channelName} status=${status}${detail ? ` detail=${detail}` : ''}`)
   await db.insert(refreshLog).values({
     playlistId,
     type: 'stream',
     triggeredBy: 'player',
     status,
-    detail: detail ?? channelName,
+    detail: msg,
   })
 }
 
@@ -42,8 +44,6 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ chan
 
   const [playlist] = await db.select().from(playlists).where(eq(playlists.id, channel.playlistId))
   if (!playlist?.proxyStreams) return new NextResponse('Stream proxy not enabled for this playlist', { status: 403 })
-
-  console.log(`[stream] ${new Date().toISOString()} channel=${channel.displayName} id=${id}`)
 
   const abort = new AbortController()
   const timer = setTimeout(() => abort.abort(), CONNECT_TIMEOUT_MS)

@@ -17,11 +17,13 @@ export async function GET(req: NextRequest) {
   } catch (err: any) {
     clearTimeout(timer)
     const msg = err?.name === 'AbortError' ? 'Segment fetch timeout' : String(err)
+    console.log(`[segment] ${new Date().toISOString()} error=${msg} url=${url}`)
     return new NextResponse(msg, { status: 502 })
   }
   clearTimeout(timer)
 
   if (!upstream.ok || !upstream.body) {
+    console.log(`[segment] ${new Date().toISOString()} error=upstream-${upstream.status} url=${url}`)
     return new NextResponse('Upstream error', { status: 502 })
   }
 
