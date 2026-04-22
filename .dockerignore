@@ -1,0 +1,5 @@
+node_modules
+.next
+.git
+*.m3u
+data
