@@ -1,5 +1,6 @@
 import { db, dataPath } from './db'
 import { playlists, groups, channels, refreshLog } from './schema'
+import { applyDeltas } from './deltas'
 import { parseM3U } from './m3u-parser'
 import { eq, and, inArray, sql } from 'drizzle-orm'
 import fs from 'fs'
@@ -120,6 +121,9 @@ export async function ingestM3U(playlistId: number, content: string) {
   await db.update(playlists)
     .set({ m3uLastFetchedAt: new Date().toISOString() })
     .where(eq(playlists.id, playlistId))
+
+  // replay user customizations on top of fresh source data
+  await applyDeltas(playlistId)
 
   return { added, updated, removed }
 }

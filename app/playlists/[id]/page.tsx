@@ -137,9 +137,11 @@ export default function PlaylistEditor({ params }: { params: Promise<{ id: strin
     const newIndex = data.groups.findIndex(g => g.id === over.id)
     const reordered = arrayMove(data.groups, oldIndex, newIndex).map((g, i) => ({ ...g, sortOrder: i }))
     setData(d => d ? { ...d, groups: reordered } : d)
-    await Promise.all(reordered.map(g => fetch(`/api/groups/${g.id}`, {
-      method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sortOrder: g.sortOrder }),
-    })))
+    await fetch('/api/groups/sort', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ playlistId: data.id, orderedIds: reordered.map(g => g.id) }),
+    })
   }, [data])
 
   function handleGroupClick(groupId: number) {

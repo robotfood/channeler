@@ -42,6 +42,14 @@ export const settings = sqliteTable('settings', {
   value: text('value').notNull(),
 })
 
+export const deltas = sqliteTable('deltas', {
+  id: integer('id').primaryKey({ autoIncrement: true }),
+  playlistId: integer('playlist_id').notNull().references(() => playlists.id, { onDelete: 'cascade' }),
+  type: text('type').notNull(),
+  payload: text('payload').notNull(),
+  createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),
+})
+
 export const refreshLog = sqliteTable('refresh_log', {
   id: integer('id').primaryKey({ autoIncrement: true }),
   playlistId: integer('playlist_id').references(() => playlists.id, { onDelete: 'cascade' }),

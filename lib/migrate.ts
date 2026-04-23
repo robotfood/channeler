@@ -55,6 +55,14 @@ export function runMigrations() {
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
 
+    CREATE TABLE IF NOT EXISTS deltas (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      playlist_id INTEGER NOT NULL REFERENCES playlists(id) ON DELETE CASCADE,
+      type TEXT NOT NULL,
+      payload TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
     INSERT OR IGNORE INTO settings (key, value) VALUES
       ('m3u_auto_refresh_enabled', 'false'),
       ('m3u_refresh_interval_seconds', '86400'),
