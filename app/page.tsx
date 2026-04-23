@@ -6,6 +6,7 @@ import Link from 'next/link'
 interface Playlist {
   id: number
   name: string
+  slug: string
   m3uUrl: string | null
   m3uSourceType: string
   m3uLastFetchedAt: string | null
@@ -108,9 +109,9 @@ export default function Dashboard() {
                   {p.m3uLastFetchedAt && <span>Updated {new Date(p.m3uLastFetchedAt).toLocaleString()}</span>}
                 </div>
                 <div className="mt-3 space-y-1">
-                  <UrlRow label="M3U" url={`http://${host}/api/output/${p.id}/m3u`} />
+                  <UrlRow label="M3U" url={`http://${host}/api/output/${p.slug}/m3u`} />
                   {p.epgUrl || p.epgLastFetchedAt
-                    ? <UrlRow label="EPG" url={`http://${host}/api/output/${p.id}/xml`} />
+                    ? <UrlRow label="EPG" url={`http://${host}/api/output/${p.slug}/xml`} />
                     : <p className="text-xs text-gray-400 dark:text-gray-600 mt-1">No EPG configured</p>
                   }
                 </div>

@@ -7,10 +7,12 @@ import { eq, asc, and } from 'drizzle-orm'
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
-  const playlistId = parseInt(id)
-
-  const [playlist] = await db.select().from(playlists).where(eq(playlists.id, playlistId))
+  const numericId = parseInt(id)
+  const [playlist] = await db.select().from(playlists).where(
+    isNaN(numericId) ? eq(playlists.slug, id) : eq(playlists.id, numericId)
+  )
   if (!playlist) return new NextResponse('Not found', { status: 404 })
+  const playlistId = playlist.id
 
   console.log(`[m3u] ${new Date().toISOString()} playlist=${playlist.name} id=${playlistId}`)
 

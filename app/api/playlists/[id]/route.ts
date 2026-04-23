@@ -27,7 +27,10 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   const playlistId = parseInt(id)
   const body = await req.json()
   const updates: Record<string, any> = {}
-  if ('name' in body) updates.name = body.name
+  if ('name' in body) {
+    updates.name = body.name
+    updates.slug = (body.name as string).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'playlist'
+  }
   if ('m3uUrl' in body) updates.m3uUrl = body.m3uUrl
   if ('epgUrl' in body) updates.epgUrl = body.epgUrl
   if ('autoRefresh' in body) updates.autoRefresh = body.autoRefresh

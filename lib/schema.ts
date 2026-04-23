@@ -10,6 +10,7 @@ export const playlists = sqliteTable('playlists', {
   epgUrl: text('epg_url'),
   epgSourceType: text('epg_source_type'),
   epgLastFetchedAt: text('epg_last_fetched_at'),
+  slug: text('slug').notNull().default(''),
   autoRefresh: integer('auto_refresh', { mode: 'boolean' }).notNull().default(true),
   proxyStreams: integer('proxy_streams', { mode: 'boolean' }).notNull().default(false),
   createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),

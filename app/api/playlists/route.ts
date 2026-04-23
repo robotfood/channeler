@@ -11,6 +11,7 @@ export async function GET() {
     .select({
       id: playlists.id,
       name: playlists.name,
+      slug: playlists.slug,
       m3uUrl: playlists.m3uUrl,
       m3uSourceType: playlists.m3uSourceType,
       m3uLastFetchedAt: playlists.m3uLastFetchedAt,
@@ -48,8 +49,11 @@ export async function POST(req: NextRequest) {
   if (!name) return NextResponse.json({ error: 'name required' }, { status: 400 })
   if (!m3uUrl && !m3uFile) return NextResponse.json({ error: 'M3U source required' }, { status: 400 })
 
+  const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'playlist'
+
   const [playlist] = await db.insert(playlists).values({
     name,
+    slug,
     m3uUrl: m3uUrl || null,
     m3uSourceType: m3uFile ? 'upload' : 'url',
     epgUrl: epgUrl || null,

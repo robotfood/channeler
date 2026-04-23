@@ -1,7 +1,18 @@
 import { sqlite } from './db'
 
+function slugify(name: string): string {
+  return name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'playlist'
+}
+
 export function runMigrations() {
   try { sqlite.exec(`ALTER TABLE playlists ADD COLUMN proxy_streams INTEGER NOT NULL DEFAULT 0`) } catch {}
+  try { sqlite.exec(`ALTER TABLE playlists ADD COLUMN slug TEXT NOT NULL DEFAULT ''`) } catch {}
+
+  // Populate slugs for existing playlists that don't have one
+  const rows = sqlite.prepare(`SELECT id, name FROM playlists WHERE slug = '' OR slug IS NULL`).all() as { id: number; name: string }[]
+  for (const row of rows) {
+    sqlite.prepare(`UPDATE playlists SET slug = ? WHERE id = ?`).run(slugify(row.name), row.id)
+  }
 
   sqlite.exec(`
     CREATE TABLE IF NOT EXISTS playlists (
@@ -13,6 +24,7 @@ export function runMigrations() {
       epg_url TEXT,
       epg_source_type TEXT,
       epg_last_fetched_at TEXT,
+      slug TEXT NOT NULL DEFAULT '',
       auto_refresh INTEGER NOT NULL DEFAULT 1,
       proxy_streams INTEGER NOT NULL DEFAULT 0,
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
