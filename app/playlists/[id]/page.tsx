@@ -209,10 +209,10 @@ export default function PlaylistEditor({ params }: { params: Promise<{ id: strin
     setRefreshing(null)
   }
 
-  async function bulkToggleGroup(enabled: boolean) {
-    if (!data || !selectedGroupId) return
-    const chs = data.channels.filter(c => c.groupId === selectedGroupId)
-    setData(d => d ? { ...d, channels: d.channels.map(c => c.groupId === selectedGroupId ? { ...c, enabled } : c) } : d)
+  async function bulkToggleChannels(chs: Channel[], enabled: boolean) {
+    if (!data || chs.length === 0) return
+    const ids = new Set(chs.map(c => c.id))
+    setData(d => d ? { ...d, channels: d.channels.map(c => ids.has(c.id) ? { ...c, enabled } : c) } : d)
     await Promise.all(chs.map(c => fetch(`/api/channels/${c.id}`, {
       method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled }),
     })))
@@ -336,9 +336,13 @@ export default function PlaylistEditor({ params }: { params: Promise<{ id: strin
               </span>
               {selectedGroupId && (
                 <div className="flex gap-2 text-xs">
-                  <button onClick={() => bulkToggleGroup(true)} className="text-blue-600 dark:text-blue-400 hover:text-blue-500 dark:hover:text-blue-300">Enable all</button>
+                  <button onClick={() => bulkToggleChannels(filteredChannels, true)} className="text-blue-600 dark:text-blue-400 hover:text-blue-500 dark:hover:text-blue-300">
+                    {channelSearch ? `Enable (${filteredChannels.length})` : 'Enable all'}
+                  </button>
                   <span className="text-gray-300 dark:text-gray-700">·</span>
-                  <button onClick={() => bulkToggleGroup(false)} className="text-blue-600 dark:text-blue-400 hover:text-blue-500 dark:hover:text-blue-300">Disable all</button>
+                  <button onClick={() => bulkToggleChannels(filteredChannels, false)} className="text-blue-600 dark:text-blue-400 hover:text-blue-500 dark:hover:text-blue-300">
+                    {channelSearch ? `Disable (${filteredChannels.length})` : 'Disable all'}
+                  </button>
                 </div>
               )}
             </div>
