@@ -4,6 +4,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { playlists, groups, channels } from '@/lib/schema'
 import { eq, asc, and } from 'drizzle-orm'
+import { getPublicBaseUrl } from '@/lib/public-base-url'
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
@@ -30,7 +31,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     channelsByGroup.get(ch.groupId)!.push(ch)
   }
 
-  const baseUrl = `${req.nextUrl.protocol}//${req.nextUrl.host}`
+  const baseUrl = getPublicBaseUrl(req)
 
   const lines: string[] = ['#EXTM3U']
   for (const g of enabledGroups) {

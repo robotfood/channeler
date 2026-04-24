@@ -21,11 +21,14 @@ docker build -t channeler .
 docker run -d \
   -p 3000:3000 \
   -v /your/host/path/data:/app/data \
+  -e PUBLIC_BASE_URL=http://192.168.50.4:3000 \
   --name channeler \
   channeler
 ```
 
 Open [http://localhost:3000](http://localhost:3000).
+
+If stream proxying is enabled and clients need to reach this app on your LAN or through a reverse proxy, set `PUBLIC_BASE_URL` to the externally reachable base URL so generated proxy stream URLs use the correct address.
 
 ## Data storage
 
@@ -67,3 +70,4 @@ Runs on [http://localhost:3000](http://localhost:3000). Data is stored in `./dat
 |---|---|---|
 | `DATA_PATH` | `./data` | Path to SQLite DB and raw cache files |
 | `PORT` | `3000` | Port to listen on |
+| `PUBLIC_BASE_URL` | unset | External base URL used when generating proxied stream URLs, e.g. `http://your-server:3000` |

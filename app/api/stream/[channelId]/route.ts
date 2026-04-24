@@ -5,6 +5,7 @@ import { db } from '@/lib/db'
 import { channels, playlists, refreshLog } from '@/lib/schema'
 import { eq } from 'drizzle-orm'
 import { toProxyResponse } from '@/lib/stream-proxy'
+import { getPublicBaseUrl } from '@/lib/public-base-url'
 const CONNECT_TIMEOUT_MS = 10_000
 
 async function logStream(playlistId: number, channelName: string, status: 'success' | 'error', detail?: string) {
@@ -55,7 +56,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ chan
     return new NextResponse('Upstream error', { status: 502 })
   }
 
-  const baseUrl = `${req.nextUrl.protocol}//${req.nextUrl.host}`
+  const baseUrl = getPublicBaseUrl(req)
   await logStream(playlist.id, channel.displayName, 'success')
   return toProxyResponse(upstream, channel.streamUrl, baseUrl)
 }

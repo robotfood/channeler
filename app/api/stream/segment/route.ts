@@ -2,6 +2,7 @@ export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
 import { toProxyResponse } from '@/lib/stream-proxy'
+import { getPublicBaseUrl } from '@/lib/public-base-url'
 
 const CONNECT_TIMEOUT_MS = 10_000
 
@@ -35,6 +36,6 @@ export async function GET(req: NextRequest) {
     return new NextResponse('Upstream error', { status: 502 })
   }
 
-  const baseUrl = `${req.nextUrl.protocol}//${req.nextUrl.host}`
+  const baseUrl = getPublicBaseUrl(req)
   return toProxyResponse(upstream, url, baseUrl)
 }
