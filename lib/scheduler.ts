@@ -1,7 +1,7 @@
 import { db } from './db'
 import { settings, playlists } from './schema'
 import { refreshM3U, refreshEPG } from './playlist-ops'
-import { eq } from 'drizzle-orm'
+import { hasXtreamCredentials } from './xtream'
 
 let m3uTimer: ReturnType<typeof setInterval> | null = null
 let epgTimer: ReturnType<typeof setInterval> | null = null
@@ -13,7 +13,9 @@ function getSetting(rows: { key: string; value: string }[], key: string): string
 async function runM3URefresh() {
   const all = await db.select().from(playlists)
   for (const p of all) {
-    if (!p.autoRefresh || !p.m3uUrl) continue
+    if (!p.autoRefresh) continue
+    if (p.m3uSourceType === 'xtream' && !hasXtreamCredentials(p)) continue
+    if (p.m3uSourceType !== 'xtream' && !p.m3uUrl) continue
     try { await refreshM3U(p.id, 'auto') } catch {}
   }
 }
@@ -21,7 +23,9 @@ async function runM3URefresh() {
 async function runEPGRefresh() {
   const all = await db.select().from(playlists)
   for (const p of all) {
-    if (!p.autoRefresh || !p.epgUrl) continue
+    if (!p.autoRefresh) continue
+    if (p.epgSourceType === 'xtream' && !hasXtreamCredentials(p)) continue
+    if (p.epgSourceType !== 'xtream' && !p.epgUrl) continue
     try { await refreshEPG(p.id, 'auto') } catch {}
   }
 }

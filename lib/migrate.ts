@@ -7,6 +7,10 @@ function slugify(name: string): string {
 export function runMigrations() {
   try { sqlite.exec(`ALTER TABLE playlists ADD COLUMN proxy_streams INTEGER NOT NULL DEFAULT 0`) } catch {}
   try { sqlite.exec(`ALTER TABLE playlists ADD COLUMN slug TEXT NOT NULL DEFAULT ''`) } catch {}
+  try { sqlite.exec(`ALTER TABLE playlists ADD COLUMN xtream_server_url TEXT`) } catch {}
+  try { sqlite.exec(`ALTER TABLE playlists ADD COLUMN xtream_username TEXT`) } catch {}
+  try { sqlite.exec(`ALTER TABLE playlists ADD COLUMN xtream_password TEXT`) } catch {}
+  try { sqlite.exec(`ALTER TABLE playlists ADD COLUMN xtream_output TEXT`) } catch {}
 
   // Populate slugs for existing playlists that don't have one
   const rows = sqlite.prepare(`SELECT id, name FROM playlists WHERE slug = '' OR slug IS NULL`).all() as { id: number; name: string }[]
@@ -20,6 +24,10 @@ export function runMigrations() {
       name TEXT NOT NULL,
       m3u_url TEXT,
       m3u_source_type TEXT NOT NULL DEFAULT 'url',
+      xtream_server_url TEXT,
+      xtream_username TEXT,
+      xtream_password TEXT,
+      xtream_output TEXT,
       m3u_last_fetched_at TEXT,
       epg_url TEXT,
       epg_source_type TEXT,

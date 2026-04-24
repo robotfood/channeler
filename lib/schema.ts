@@ -1,4 +1,4 @@
-import { sqliteTable, integer, text, real } from 'drizzle-orm/sqlite-core'
+import { sqliteTable, integer, text } from 'drizzle-orm/sqlite-core'
 import { sql } from 'drizzle-orm'
 
 export const playlists = sqliteTable('playlists', {
@@ -6,6 +6,10 @@ export const playlists = sqliteTable('playlists', {
   name: text('name').notNull(),
   m3uUrl: text('m3u_url'),
   m3uSourceType: text('m3u_source_type').notNull().default('url'),
+  xtreamServerUrl: text('xtream_server_url'),
+  xtreamUsername: text('xtream_username'),
+  xtreamPassword: text('xtream_password'),
+  xtreamOutput: text('xtream_output'),
   m3uLastFetchedAt: text('m3u_last_fetched_at'),
   epgUrl: text('epg_url'),
   epgSourceType: text('epg_source_type'),

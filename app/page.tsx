@@ -11,6 +11,7 @@ interface Playlist {
   m3uSourceType: string
   m3uLastFetchedAt: string | null
   epgUrl: string | null
+  epgSourceType: string | null
   epgLastFetchedAt: string | null
   channelTotal: number
   channelEnabled: number
@@ -66,10 +67,9 @@ function UrlRow({ label, url }: { label: string; url: string }) {
 export default function Dashboard() {
   const [playlists, setPlaylists] = useState<Playlist[]>([])
   const [loading, setLoading] = useState(true)
-  const [host, setHost] = useState('localhost:3000')
+  const [host] = useState(() => typeof window === 'undefined' ? 'localhost:3000' : window.location.host)
 
   useEffect(() => {
-    setHost(window.location.host)
     fetch('/api/playlists').then(r => r.json()).then(data => { setPlaylists(data); setLoading(false) })
   }, [])
 
@@ -110,7 +110,7 @@ export default function Dashboard() {
                 </div>
                 <div className="mt-3 space-y-1">
                   <UrlRow label="M3U" url={`http://${host}/api/output/${p.slug}/m3u`} />
-                  {p.epgUrl || p.epgLastFetchedAt
+                  {p.epgUrl || p.epgLastFetchedAt || p.epgSourceType === 'xtream'
                     ? <UrlRow label="EPG" url={`http://${host}/api/output/${p.slug}/xml`} />
                     : <p className="text-xs text-gray-400 dark:text-gray-600 mt-1">No EPG configured</p>
                   }

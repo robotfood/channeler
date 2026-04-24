@@ -9,6 +9,10 @@ interface PlaylistSettings {
   name: string
   m3uUrl: string | null
   m3uSourceType: string
+  xtreamServerUrl: string | null
+  xtreamUsername: string | null
+  xtreamPassword: string | null
+  xtreamOutput: string | null
   epgUrl: string | null
   epgSourceType: string | null
   autoRefresh: boolean
@@ -24,6 +28,10 @@ export default function PlaylistSettings({ params }: { params: Promise<{ id: str
   const [data, setData] = useState<PlaylistSettings | null>(null)
   const [name, setName] = useState('')
   const [m3uUrl, setM3uUrl] = useState('')
+  const [xtreamServerUrl, setXtreamServerUrl] = useState('')
+  const [xtreamUsername, setXtreamUsername] = useState('')
+  const [xtreamPassword, setXtreamPassword] = useState('')
+  const [xtreamOutput, setXtreamOutput] = useState('ts')
   const [epgUrl, setEpgUrl] = useState('')
   const [autoRefresh, setAutoRefresh] = useState(true)
   const [proxyStreams, setProxyStreams] = useState(false)
@@ -37,6 +45,10 @@ export default function PlaylistSettings({ params }: { params: Promise<{ id: str
       setData(d)
       setName(d.name)
       setM3uUrl(d.m3uUrl ?? '')
+      setXtreamServerUrl(d.xtreamServerUrl ?? '')
+      setXtreamUsername(d.xtreamUsername ?? '')
+      setXtreamPassword(d.xtreamPassword ?? '')
+      setXtreamOutput(d.xtreamOutput ?? 'ts')
       setEpgUrl(d.epgUrl ?? '')
       setAutoRefresh(d.autoRefresh)
       setProxyStreams(d.proxyStreams)
@@ -44,11 +56,22 @@ export default function PlaylistSettings({ params }: { params: Promise<{ id: str
   }, [id])
 
   async function save() {
+    if (!data) return
     setSaving(true)
     await fetch(`/api/playlists/${id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, m3uUrl: m3uUrl || null, epgUrl: epgUrl || null, autoRefresh, proxyStreams }),
+      body: JSON.stringify({
+        name,
+        m3uUrl: data.m3uSourceType === 'xtream' ? null : m3uUrl || null,
+        epgUrl: data.epgSourceType === 'xtream' ? null : epgUrl || null,
+        autoRefresh,
+        proxyStreams,
+        xtreamServerUrl: data.m3uSourceType === 'xtream' ? xtreamServerUrl || null : null,
+        xtreamUsername: data.m3uSourceType === 'xtream' ? xtreamUsername || null : null,
+        xtreamPassword: data.m3uSourceType === 'xtream' ? xtreamPassword || null : null,
+        xtreamOutput: data.m3uSourceType === 'xtream' ? xtreamOutput : null,
+      }),
     })
     showToast('Saved')
     setSaving(false)
@@ -75,20 +98,53 @@ export default function PlaylistSettings({ params }: { params: Promise<{ id: str
           <input value={name} onChange={e => setName(e.target.value)} className={inputCls} />
         </div>
 
-        <div>
-          <label className={labelCls}>M3U URL</label>
-          <input value={m3uUrl} onChange={e => setM3uUrl(e.target.value)}
-            placeholder="https://example.com/playlist.m3u" className={inputCls} />
-          {data.m3uSourceType === 'upload' && (
-            <p className="text-xs text-gray-400 dark:text-gray-600 mt-1">Originally uploaded — adding a URL enables auto-refresh</p>
-          )}
-        </div>
+        {data.m3uSourceType === 'xtream' ? (
+          <>
+            <div>
+              <label className={labelCls}>Xtream server URL</label>
+              <input value={xtreamServerUrl} onChange={e => setXtreamServerUrl(e.target.value)}
+                placeholder="https://provider.example:8080" className={inputCls} />
+            </div>
+            <div>
+              <label className={labelCls}>Xtream username</label>
+              <input value={xtreamUsername} onChange={e => setXtreamUsername(e.target.value)}
+                className={inputCls} />
+            </div>
+            <div>
+              <label className={labelCls}>Xtream password</label>
+              <input type="password" value={xtreamPassword} onChange={e => setXtreamPassword(e.target.value)}
+                className={inputCls} />
+            </div>
+            <div>
+              <label className={labelCls}>Xtream output</label>
+              <select value={xtreamOutput} onChange={e => setXtreamOutput(e.target.value)} className={inputCls}>
+                <option value="ts">TS output</option>
+                <option value="m3u8">M3U8 output</option>
+              </select>
+            </div>
+            <div>
+              <label className={labelCls}>EPG source</label>
+              <p className="text-sm text-gray-500 dark:text-gray-400">EPG refresh uses the Xtream XMLTV endpoint for this account.</p>
+            </div>
+          </>
+        ) : (
+          <>
+            <div>
+              <label className={labelCls}>M3U URL</label>
+              <input value={m3uUrl} onChange={e => setM3uUrl(e.target.value)}
+                placeholder="https://example.com/playlist.m3u" className={inputCls} />
+              {data.m3uSourceType === 'upload' && (
+                <p className="text-xs text-gray-400 dark:text-gray-600 mt-1">Originally uploaded — adding a URL enables auto-refresh</p>
+              )}
+            </div>
 
-        <div>
-          <label className={labelCls}>EPG URL</label>
-          <input value={epgUrl} onChange={e => setEpgUrl(e.target.value)}
-            placeholder="https://example.com/epg.xml.gz (leave blank for none)" className={inputCls} />
-        </div>
+            <div>
+              <label className={labelCls}>EPG URL</label>
+              <input value={epgUrl} onChange={e => setEpgUrl(e.target.value)}
+                placeholder="https://example.com/epg.xml.gz (leave blank for none)" className={inputCls} />
+            </div>
+          </>
+        )}
 
         <div>
           <label className={labelCls}>Upload new EPG file</label>

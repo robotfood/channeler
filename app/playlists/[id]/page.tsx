@@ -33,7 +33,9 @@ interface PlaylistData {
   id: number
   name: string
   m3uUrl: string | null
+  m3uSourceType: string
   epgUrl: string | null
+  epgSourceType: string | null
   epgLastFetchedAt: string | null
   groups: Group[]
   channels: Channel[]
@@ -246,13 +248,13 @@ export default function PlaylistEditor({ params }: { params: Promise<{ id: strin
           <span className="text-sm text-gray-400 dark:text-gray-500">{totalEnabled} / {data.channels.length} channels</span>
         </div>
         <div className="flex gap-2">
-          {data.m3uUrl && (
+          {(data.m3uUrl || data.m3uSourceType === 'xtream') && (
             <button onClick={refreshM3U} disabled={!!refreshing}
               className="text-sm px-3 py-1.5 rounded bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 disabled:opacity-50 transition-colors">
               {refreshing === 'm3u' ? 'Refreshing...' : 'Refresh M3U'}
             </button>
           )}
-          {data.epgUrl && (
+          {(data.epgUrl || data.epgSourceType === 'xtream') && (
             <button onClick={refreshEPG} disabled={!!refreshing}
               className="text-sm px-3 py-1.5 rounded bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 disabled:opacity-50 transition-colors">
               {refreshing === 'epg' ? 'Refreshing...' : 'Refresh EPG'}

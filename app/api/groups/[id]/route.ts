@@ -10,7 +10,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   const { id } = await params
   const groupId = parseInt(id)
   const body = await req.json()
-  const updates: Record<string, any> = {}
+  const updates: Record<string, string | boolean | number> = {}
 
   const [group] = await db.select().from(groups).where(eq(groups.id, groupId))
   if (!group) return NextResponse.json({ error: 'Not found' }, { status: 404 })

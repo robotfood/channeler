@@ -10,7 +10,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   const { id } = await params
   const channelId = parseInt(id)
   const body = await req.json()
-  const updates: Record<string, any> = {}
+  const updates: Record<string, string | boolean> = {}
 
   const [channel] = await db.select().from(channels).where(eq(channels.id, channelId))
   if (!channel) return NextResponse.json({ error: 'Not found' }, { status: 404 })

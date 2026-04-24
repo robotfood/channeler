@@ -2,13 +2,18 @@ import { db, dataPath } from './db'
 import { playlists, groups, channels, refreshLog } from './schema'
 import { applyDeltas } from './deltas'
 import { parseM3U } from './m3u-parser'
-import { eq, and, inArray, sql } from 'drizzle-orm'
+import { buildXtreamEpgUrl, buildXtreamM3uUrl, hasXtreamCredentials } from './xtream'
+import { eq, inArray } from 'drizzle-orm'
 import fs from 'fs'
 import path from 'path'
 import zlib from 'zlib'
 import { promisify } from 'util'
 
 const gunzip = promisify(zlib.gunzip)
+
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : 'Unknown error'
+}
 
 export async function fetchText(url: string): Promise<string> {
   const res = await fetch(url)
@@ -138,9 +143,21 @@ export async function ingestEPG(playlistId: number, content: Buffer, isGzip: boo
 
 export async function refreshM3U(playlistId: number, triggeredBy: 'auto' | 'manual') {
   const [playlist] = await db.select().from(playlists).where(eq(playlists.id, playlistId))
-  if (!playlist?.m3uUrl) throw new Error('No M3U URL configured')
+  if (!playlist) throw new Error('Playlist not found')
+
+  const sourceUrl = playlist.m3uSourceType === 'xtream' && hasXtreamCredentials(playlist)
+    ? buildXtreamM3uUrl({
+        serverUrl: playlist.xtreamServerUrl!,
+        username: playlist.xtreamUsername!,
+        password: playlist.xtreamPassword!,
+        output: playlist.xtreamOutput,
+      })
+    : playlist.m3uUrl
+
+  if (!sourceUrl) throw new Error('No M3U source configured')
+
   try {
-    const content = await fetchText(playlist.m3uUrl)
+    const content = await fetchText(sourceUrl)
     const delta = await ingestM3U(playlistId, content)
     await db.insert(refreshLog).values({
       playlistId,
@@ -150,24 +167,35 @@ export async function refreshM3U(playlistId: number, triggeredBy: 'auto' | 'manu
       detail: `+${delta.added} added, ${delta.updated} updated, ${delta.removed} removed`,
     })
     return delta
-  } catch (e: any) {
+  } catch (error: unknown) {
     await db.insert(refreshLog).values({
       playlistId,
       type: 'm3u',
       triggeredBy,
       status: 'error',
-      detail: e.message,
+      detail: getErrorMessage(error),
     })
-    throw e
+    throw error
   }
 }
 
 export async function refreshEPG(playlistId: number, triggeredBy: 'auto' | 'manual') {
   const [playlist] = await db.select().from(playlists).where(eq(playlists.id, playlistId))
-  if (!playlist?.epgUrl) throw new Error('No EPG URL configured')
+  if (!playlist) throw new Error('Playlist not found')
+
+  const sourceUrl = playlist.epgSourceType === 'xtream' && hasXtreamCredentials(playlist)
+    ? buildXtreamEpgUrl({
+        serverUrl: playlist.xtreamServerUrl!,
+        username: playlist.xtreamUsername!,
+        password: playlist.xtreamPassword!,
+      })
+    : playlist.epgUrl
+
+  if (!sourceUrl) throw new Error('No EPG source configured')
+
   try {
-    const buf = await fetchBinary(playlist.epgUrl)
-    const isGzip = playlist.epgUrl.endsWith('.gz')
+    const buf = await fetchBinary(sourceUrl)
+    const isGzip = sourceUrl.endsWith('.gz')
     await ingestEPG(playlistId, buf, isGzip)
     await db.insert(refreshLog).values({
       playlistId,
@@ -176,14 +204,14 @@ export async function refreshEPG(playlistId: number, triggeredBy: 'auto' | 'manu
       status: 'success',
       detail: 'EPG refreshed',
     })
-  } catch (e: any) {
+  } catch (error: unknown) {
     await db.insert(refreshLog).values({
       playlistId,
       type: 'epg',
       triggeredBy,
       status: 'error',
-      detail: e.message,
+      detail: getErrorMessage(error),
     })
-    throw e
+    throw error
   }
 }
