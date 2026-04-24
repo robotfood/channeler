@@ -4,7 +4,14 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { channels, playlists, refreshLog } from '@/lib/schema'
 import { eq } from 'drizzle-orm'
-import { toProxyResponse } from '@/lib/stream-proxy'
+import {
+  buildUpstreamRequestHeaders,
+  countSetCookieHeaders,
+  deriveProxyContext,
+  logProxyDebug,
+  summarizeUrl,
+  toProxyResponse,
+} from '@/lib/stream-proxy'
 import { getPublicBaseUrl } from '@/lib/public-base-url'
 const CONNECT_TIMEOUT_MS = 10_000
 
@@ -39,10 +46,17 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ chan
 
   const abort = new AbortController()
   const timer = setTimeout(() => abort.abort(), CONNECT_TIMEOUT_MS)
+  const requestContext = {
+    userAgent: req.headers.get('user-agent') ?? undefined,
+  }
 
   let upstream: Response
   try {
-    upstream = await fetch(channel.streamUrl, { redirect: 'follow', signal: abort.signal })
+    upstream = await fetch(channel.streamUrl, {
+      redirect: 'follow',
+      signal: abort.signal,
+      headers: buildUpstreamRequestHeaders(req, requestContext),
+    })
   } catch (err: unknown) {
     clearTimeout(timer)
     const detail = errorDetail(err)
@@ -51,6 +65,17 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ chan
   }
   clearTimeout(timer)
 
+  logProxyDebug('stream-debug', {
+    channel: channel.displayName,
+    requestUrl: summarizeUrl(channel.streamUrl),
+    finalUrl: summarizeUrl(upstream.url || channel.streamUrl),
+    status: upstream.status,
+    contentType: upstream.headers.get('content-type') ?? undefined,
+    cacheControl: upstream.headers.get('cache-control') ?? undefined,
+    setCookieCount: countSetCookieHeaders(upstream.headers),
+    requestRange: req.headers.get('range') ?? undefined,
+  })
+
   if (!upstream.ok || !upstream.body) {
     await logStream(playlist.id, channel.displayName, 'error', `Upstream ${upstream.status}`)
     return new NextResponse('Upstream error', { status: 502 })
@@ -58,5 +83,6 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ chan
 
   const baseUrl = getPublicBaseUrl(req)
   await logStream(playlist.id, channel.displayName, 'success')
-  return toProxyResponse(upstream, channel.streamUrl, baseUrl)
+  const proxyContext = deriveProxyContext(channel.streamUrl, upstream, requestContext)
+  return toProxyResponse(upstream, channel.streamUrl, baseUrl, proxyContext)
 }
