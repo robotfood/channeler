@@ -1,32 +1,22 @@
-# M3U Playlist Manager — App Spec
+# Channeler — Current App Spec
 
 ## Overview
 
-A self-hosted Next.js web app that ingests M3U IPTV playlists and their associated EPG sources, lets you filter and rename groups and channels, and serves the filtered results as live M3U and EPG proxy URLs that any IPTV player on the local network can consume. Multiple independent playlists are supported, each with its own editor, output M3U URL, and optional EPG URL.
+Channeler is a self-hosted web app for managing M3U IPTV playlists and optional XMLTV EPG sources. It imports a source playlist, stores the raw files locally, lets the user rename, enable, disable, reorder, and merge groups and channels, then serves a filtered M3U and filtered EPG for use in external IPTV players.
+
+The app is an editor and output generator, not a player. In the default mode, stream URLs are passed through directly to the IPTV client. A playlist can also opt into stream proxying through this server.
 
 ---
 
 ## Stack
 
-- **Framework:** Next.js (App Router)
-- **Database:** SQLite via `better-sqlite3`
-- **ORM/query layer:** `drizzle-orm`
-- **Deployment:** Docker container; SQLite file mounted from host via volume
-
----
-
-## Docker / Deployment
-
-```
-docker run -p 3000:3000 \
-  -v /your/host/path/data:/app/data \
-  m3u-manager
-```
-
-- SQLite file lives at `/app/data/db.sqlite` inside the container
-- The container exposes port 3000
-- Output M3U URL: `http://<host-ip>:3000/api/output/<playlist-id>.m3u`
-- Output EPG URL: `http://<host-ip>:3000/api/output/<playlist-id>.xml`
+- Framework: Next.js 16 App Router
+- UI: React 19
+- Database: SQLite via `node:sqlite`
+- Query layer: `drizzle-orm`
+- Styling: Tailwind CSS 4
+- Scheduling: in-process `setInterval`
+- Deployment target: Docker or local Node runtime
 
 ---
 
@@ -34,284 +24,360 @@ docker run -p 3000:3000 \
 
 | Term | Meaning |
 |---|---|
-| **Playlist** | One M3U source + optional EPG source, managed as a unit |
-| **Group** | The `group-title` field in the M3U (e.g. "US", "Sports", "Canada") |
-| **Channel** | A single `#EXTINF` + stream URL pair |
-| **EPG source** | An XMLTV-format file (`.xml` or `.xml.gz`), one per playlist |
-| **Output M3U** | The filtered/renamed M3U served at the proxy URL |
-| **Output EPG** | The filtered XMLTV served at the proxy URL, containing only enabled channels |
+| Playlist | One imported M3U source plus optional EPG source |
+| Group | The M3U `group-title` bucket used to organize channels |
+| Channel | A parsed `#EXTINF` entry plus its stream URL |
+| EPG source | An XMLTV `.xml` or `.xml.gz` source file |
+| Output M3U | The filtered playlist served by Channeler |
+| Output XML | The filtered XMLTV served by Channeler |
+| Delta | A persisted user edit that is replayed after source refreshes |
 
 ---
 
-## Data Model (SQLite)
+## Data Storage
+
+All app data lives under `DATA_PATH` and defaults to `./data`.
+
+```text
+data/
+  db.sqlite
+  raw/
+    <playlist-id>.m3u
+    <playlist-id>.xml
+```
+
+The raw source files are cached on disk. Structured state and user edits are stored in SQLite.
+
+---
+
+## Data Model
 
 ### `playlists`
+
 | column | type | notes |
 |---|---|---|
-| id | integer PK | |
-| name | text | user-facing label |
-| m3u_url | text | nullable — URL to refresh M3U from |
-| m3u_source_type | text | `"url"` or `"upload"` |
-| m3u_last_fetched_at | datetime | |
-| epg_url | text | nullable — URL to refresh EPG from |
-| epg_source_type | text | `"url"`, `"upload"`, or null |
-| epg_last_fetched_at | datetime | |
-| created_at | datetime | |
-
-> Raw M3U and EPG content is stored on disk at `/app/data/raw/<id>.m3u` and `/app/data/raw/<id>.xml` to avoid bloating the DB with large text blobs.
+| id | integer PK | autoincrement |
+| name | text | user-facing playlist name |
+| m3u_url | text | nullable |
+| m3u_source_type | text | `url` or `upload` |
+| m3u_last_fetched_at | text | ISO timestamp, nullable |
+| epg_url | text | nullable |
+| epg_source_type | text | `url`, `upload`, or null |
+| epg_last_fetched_at | text | ISO timestamp, nullable |
+| slug | text | URL-friendly identifier used by output routes |
+| auto_refresh | boolean | whether this playlist participates in global auto-refresh |
+| proxy_streams | boolean | whether output M3U points at local stream proxy URLs |
+| created_at | text | SQLite datetime string |
 
 ### `groups`
+
 | column | type | notes |
 |---|---|---|
-| id | integer PK | |
-| playlist_id | integer FK | |
-| original_name | text | as it appears in the M3U |
-| display_name | text | user-set override (default = original_name) |
-| enabled | boolean | false = excluded from output |
-| sort_order | integer | user-controlled ordering |
+| id | integer PK | autoincrement |
+| playlist_id | integer FK | cascade delete |
+| original_name | text | original source group name |
+| display_name | text | editable label used in output |
+| enabled | boolean | controls inclusion in output |
+| sort_order | integer | UI and output ordering |
 
 ### `channels`
+
 | column | type | notes |
 |---|---|---|
-| id | integer PK | |
-| group_id | integer FK | |
-| playlist_id | integer FK | |
-| tvg_id | text | links to EPG `<channel id="">` |
-| tvg_name | text | |
-| tvg_logo | text | |
-| display_name | text | user-set override |
-| stream_url | text | |
-| enabled | boolean | false = excluded from output |
+| id | integer PK | autoincrement |
+| playlist_id | integer FK | cascade delete |
+| group_id | integer FK | cascade delete |
+| tvg_id | text | nullable |
+| tvg_name | text | nullable |
+| tvg_logo | text | nullable |
+| display_name | text | editable channel name |
+| stream_url | text | upstream stream URL |
+| enabled | boolean | controls inclusion in output |
+| sort_order | integer | source ordering |
+
+### `settings`
+
+| column | type | notes |
+|---|---|---|
+| key | text PK | |
+| value | text | |
+
+Expected keys:
+- `m3u_auto_refresh_enabled`
+- `m3u_refresh_interval_seconds`
+- `epg_auto_refresh_enabled`
+- `epg_refresh_interval_seconds`
+
+### `deltas`
+
+Stores durable user edits so they can be replayed after a playlist refresh.
+
+| column | type | notes |
+|---|---|---|
+| id | integer PK | autoincrement |
+| playlist_id | integer FK | cascade delete |
+| type | text | delta type |
+| payload | text | JSON payload |
+| created_at | text | SQLite datetime string |
+
+Current delta types:
+- `group_rename`
+- `group_enabled`
+- `group_sort`
+- `group_merge`
+- `channel_rename`
+- `channel_enabled`
+
+### `refresh_log`
+
+| column | type | notes |
+|---|---|---|
+| id | integer PK | autoincrement |
+| playlist_id | integer FK | nullable |
+| type | text | `m3u`, `epg`, or `stream` |
+| triggered_by | text | `auto`, `manual`, or `player` |
+| status | text | `success` or `error` |
+| detail | text | human-readable result or error |
+| created_at | text | SQLite datetime string |
 
 ---
 
-## Pages & UI
+## Main Pages
 
-### `/` — Dashboard
-- List of all playlists as cards showing: name, channel count (enabled / total), group count, last M3U refresh time, last EPG refresh time
-- "Add Playlist" button
-- Per-card actions: Edit, Settings, Delete
-- Per-card: "Copy M3U URL" and "Copy EPG URL" buttons (EPG button grayed out if no EPG source configured)
+### `/` Dashboard
 
-### `/playlists/new` — Add Playlist
+Shows all playlists as cards with:
+- playlist name
+- enabled channel count vs total channel count
+- group count
+- last M3U refresh timestamp
+- output URLs for M3U and EPG
+- actions for edit, settings, and delete
 
-**Step 1 — M3U source**
-- Two tabs: **URL** and **Upload**
-- URL tab: text field for M3U URL, text field for playlist name (auto-suggested from URL)
-- Upload tab: drag-and-drop or file picker for `.m3u` / `.m3u8`
+The dashboard exposes output URLs using the playlist slug:
+- `/api/output/<slug>/m3u`
+- `/api/output/<slug>/xml`
 
-**Step 2 — EPG source (optional, skippable)**
-- Same two-tab pattern: URL or Upload
-- URL tab: text field for XMLTV URL (`.xml` or `.xml.gz`)
-- Upload tab: file picker for `.xml` / `.xml.gz`
-- "Skip for now" option — EPG can be added later in Settings
+### `/playlists/new`
 
-On submit: fetch/parse M3U (and EPG if provided), seed DB, redirect to the playlist editor.
+Creates a playlist from:
+- M3U URL or uploaded `.m3u` / `.m3u8` file
+- optional EPG URL or uploaded `.xml` / `.xml.gz` file
 
-### `/playlists/[id]` — Playlist Editor
+On create:
+1. A playlist row is inserted with a generated slug.
+2. The M3U is fetched or read from upload.
+3. The playlist is parsed into groups and channels.
+4. The optional EPG is fetched or read from upload and cached.
+5. The user is redirected to the playlist editor.
 
-Two-panel layout:
+### `/playlists/[id]`
 
-**Left panel — Group list**
-- All groups for this playlist, ordered by `sort_order`
-- Each row: toggle (enabled/disabled), group name (click to rename inline), enabled/total channel count badge, drag handle for reordering
-- Bulk actions: "Enable all", "Disable all"
-- Search/filter field to find groups by name
+Playlist editor with:
+- searchable group list
+- group enable and disable toggles
+- inline group renaming
+- drag-and-drop group sorting
+- group merge flow
+- searchable channel list within the selected group
+- channel enable and disable toggles
+- inline channel renaming
+- manual refresh buttons for M3U and EPG when corresponding URLs exist
 
-**Right panel — Channel list**
-- Shows channels for the currently selected group
-- Each row: channel logo (small thumbnail), channel name (click to rename inline), toggle (enabled/disabled)
-- Search/filter field within the group
-- Selecting a different group in the left panel updates this panel
+### `/playlists/[id]/settings`
 
-**Top bar**
-- Playlist name
-- "Refresh M3U" button — re-fetches and merges M3U
-- "Refresh EPG" button — re-fetches EPG (grayed out if no EPG configured)
-- "Copy M3U URL" and "Copy EPG URL" buttons
-- Stats: X of Y channels enabled across Z groups
+Per-playlist settings for:
+- playlist name
+- M3U URL
+- EPG URL
+- include in global auto-refresh
+- proxy streams through this server
+- delete playlist
 
-### `/playlists/[id]/settings` — Playlist Settings
-- Rename the playlist
-- Change or remove M3U source URL
-- Add, change, or remove EPG source (URL or upload)
-- "Refresh now" buttons for M3U and EPG individually
-- Delete playlist (with confirmation — warns that all edits will be lost)
+Notes:
+- Changing the playlist name also regenerates the slug.
+- For uploaded playlists, adding a URL later enables scheduled refreshes.
+- The current settings UI shows an "Upload new EPG file" control, but the backend route it calls performs a URL-based refresh rather than accepting a file upload.
+
+### `/settings`
+
+Global settings page for:
+- enabling or disabling M3U auto-refresh
+- enabling or disabling EPG auto-refresh
+- selecting refresh intervals
+- viewing the last 50 refresh log entries
 
 ---
 
-## API Routes
+## API Surface
 
 ### Playlist management
-| method | path | action |
-|---|---|---|
-| `GET` | `/api/playlists` | List all playlists (metadata) |
-| `POST` | `/api/playlists` | Create playlist (body: m3u URL or file, optional EPG URL or file, name) |
-| `GET` | `/api/playlists/[id]` | Playlist + all groups + channels |
-| `PATCH` | `/api/playlists/[id]` | Update name, m3u_url, epg_url |
-| `DELETE` | `/api/playlists/[id]` | Delete playlist and all data |
-| `POST` | `/api/playlists/[id]/refresh-m3u` | Re-fetch and merge M3U |
-| `POST` | `/api/playlists/[id]/refresh-epg` | Re-fetch and cache EPG |
 
-### Group & channel edits
 | method | path | action |
 |---|---|---|
-| `PATCH` | `/api/groups/[id]` | Update `display_name`, `enabled`, `sort_order` |
-| `PATCH` | `/api/channels/[id]` | Update `display_name`, `enabled` |
+| `GET` | `/api/playlists` | list playlists with counts and metadata |
+| `POST` | `/api/playlists` | create playlist from URL or uploaded files |
+| `GET` | `/api/playlists/[id]` | fetch one playlist with groups and channels |
+| `PATCH` | `/api/playlists/[id]` | update name, URLs, auto-refresh, proxy setting, and some source metadata |
+| `DELETE` | `/api/playlists/[id]` | delete playlist and related data |
+| `POST` | `/api/playlists/[id]/refresh-m3u` | fetch M3U from stored URL and merge it |
+| `POST` | `/api/playlists/[id]/refresh-epg` | fetch EPG from stored URL and cache it |
 
-### Output (proxy) endpoints
+### Group and channel updates
+
 | method | path | action |
 |---|---|---|
-| `GET` | `/api/output/[id].m3u` | Filtered M3U for IPTV player |
-| `GET` | `/api/output/[id].xml` | Filtered EPG for IPTV player |
+| `PATCH` | `/api/groups/[id]` | update group display name or enabled state |
+| `POST` | `/api/groups/sort` | persist group order for a playlist |
+| `POST` | `/api/groups/merge` | merge one group into another |
+| `PATCH` | `/api/channels/[id]` | update channel display name or enabled state |
+
+### App settings
+
+| method | path | action |
+|---|---|---|
+| `GET` | `/api/settings` | return global settings and recent log entries |
+| `PATCH` | `/api/settings` | update settings and reload scheduler |
+
+### Output and proxy routes
+
+| method | path | action |
+|---|---|---|
+| `GET` | `/api/output/[id]/m3u` | serve filtered playlist by numeric id or slug |
+| `GET` | `/api/output/[id]/xml` | serve filtered XMLTV by numeric id or slug |
+| `GET` | `/api/stream/[channelId]` | proxy a channel stream when playlist proxying is enabled |
+| `GET` | `/api/stream/segment` | proxy rewritten HLS segment requests |
+| `GET` | `/api/proxy/logo` | image proxy for channel logos |
 
 ---
 
-## Output M3U Format
+## M3U Ingest and Refresh Behavior
 
-Generated on-the-fly from DB state. Only enabled groups (in `sort_order`) and enabled channels within them are included. Display name overrides are applied.
+### Parsing
 
-```
-#EXTM3U
-#EXTINF:-1 tvg-id="cnn.us" tvg-name="cnn.us" tvg-logo="https://..." group-title="News",CNN US
-https://starlite.best/api/stream/.../cnn.us.m3u8
-```
+The parser reads `#EXTINF` entries and extracts:
+- `tvg-id`
+- `tvg-name`
+- `tvg-logo`
+- `group-title`
+- display name from the text after the final comma
+- stream URL from the following line
 
+### Initial ingest
+
+On first import:
+1. The raw M3U is written to `raw/<playlist-id>.m3u`.
+2. Unique groups are created in source order.
+3. Channels are created and assigned to groups.
+4. `m3u_last_fetched_at` is updated.
+
+### Refresh merge logic
+
+On M3U refresh from URL:
+1. Fetch the current source playlist.
+2. Rewrite the cached raw `.m3u` file.
+3. Match groups by `original_name`.
+4. Match channels using the first available key in this order:
+   - `tvg_id`
+   - `tvg_name`
+   - `display_name`
+5. Existing channels keep their identity and editable state while stream URL, logo, group, and sort order are updated.
+6. Newly discovered channels are inserted enabled by default.
+7. Channels no longer present in the source are not deleted; they are marked `enabled = false`.
+8. User deltas are replayed so renames, enabled states, sorts, and merges survive refreshes.
+9. A refresh log entry is written with added, updated, and removed counts.
+
+Current implementation detail:
+- Missing groups are not explicitly deleted or disabled during refresh. If a group loses all active channels, it may still remain in the database.
+
+---
+
+## EPG Ingest and Output Behavior
+
+### Ingest
+
+EPG import supports `.xml` and `.xml.gz`.
+
+On ingest:
+1. The source is fetched or read from upload.
+2. Gzip content is decompressed if needed.
+3. The XML is written to `raw/<playlist-id>.xml`.
+4. `epg_last_fetched_at` is updated.
+
+### Output filtering
+
+The XML output route:
+1. Resolves the playlist by numeric id or slug.
+2. Loads enabled channels for that playlist.
+3. Builds a set of enabled `tvg_id` values.
+4. Reads the cached XML file from disk.
+5. Filters `<channel>` and `<programme>` elements whose `id` or `channel` matches an enabled `tvg_id`.
+6. Returns a synthetic filtered `<tv>` document.
+
+Current implementation detail:
+- Filtering is regex-based rather than using a full XML parser.
+- Channels without a `tvg_id` cannot contribute to XML filtering.
+
+---
+
+## Output M3U Behavior
+
+The generated M3U is built on request from database state.
+
+Rules:
+- only enabled groups are included
+- groups are ordered by `sort_order`
+- only enabled channels are included
+- channels are ordered by `sort_order`
+- `display_name` is used for channel and group labels
+- `tvg-logo` and `tvg-id` are included when present
+
+If `proxy_streams` is disabled:
+- each channel points directly at its stored `stream_url`
+
+If `proxy_streams` is enabled:
+- each channel points at `/api/stream/<channel-id>`
+
+The response uses:
 - `Content-Type: application/x-mpegurl`
-- Stream URLs pass through as-is (IPTV player hits the source directly — no video proxying)
+- `Content-Disposition: attachment; filename="<playlist-name>.m3u"`
 
 ---
 
-## Output EPG Format
+## Stream Proxy Behavior
 
-The EPG proxy filters the cached XMLTV file down to only the `<channel>` and `<programme>` elements whose `id`/`channel` attribute matches a `tvg-id` of an enabled channel in this playlist.
+When stream proxying is enabled for a playlist:
+1. The output M3U emits local stream proxy URLs.
+2. The stream proxy fetches the upstream channel URL.
+3. If the upstream response is an HLS playlist, the body is rewritten so media segment URLs point at `/api/stream/segment`.
+4. Non-HLS responses are streamed through directly.
+5. Success and error events are written to `refresh_log` with type `stream`.
 
-```xml
-<?xml version="1.0" encoding="UTF-8"?>
-<tv>
-  <channel id="cnn.us">...</channel>
-  <programme channel="cnn.us" start="..." stop="...">...</programme>
-  ...
-</tv>
-```
-
-- `Content-Type: application/xml`
-- Served from the cached file on disk — does not re-fetch on every request
-- `.xml.gz` sources are decompressed on ingest and stored as plain XML
+Proxying is opt-in per playlist. Requests to `/api/stream/[channelId]` return `403` if the playlist does not have proxying enabled.
 
 ---
 
-## M3U Parsing Rules
+## Scheduler Behavior
 
-```
-#EXTINF:-1 tvg-id="..." tvg-name="..." tvg-type="live" group-title="US" tvg-logo="...",Display Name
-https://stream.url/path.m3u8
-```
+The scheduler is process-local and uses `setInterval`.
 
-Parser extracts:
-- `tvg-id`, `tvg-name`, `tvg-logo`, `group-title` from `#EXTINF` attributes (regex over the attribute string)
-- Display name from the text after the last `,` on the `#EXTINF` line
-- Stream URL from the immediately following line
+Global settings control whether M3U and EPG auto-refresh jobs run and at what intervals. When settings are changed, the scheduler is reloaded.
 
-Groups are auto-created from unique `group-title` values in the file.
+For each run:
+- M3U refresh iterates every playlist with `auto_refresh = true` and a non-null `m3u_url`
+- EPG refresh iterates every playlist with `auto_refresh = true` and a non-null `epg_url`
+- each refresh writes success or error entries to `refresh_log`
 
----
-
-## Refresh / Merge Logic (M3U)
-
-1. Re-fetch raw M3U, write to `/app/data/raw/<id>.m3u`
-2. For each group in the new data: match by `original_name` — keep existing `display_name` / `enabled` / `sort_order`; insert new groups as enabled with default sort at end
-3. For each channel: match by `tvg-id` (fall back to `tvg-name` + `stream_url` hash); preserve `display_name` and `enabled`; update `stream_url` if changed
-4. Channels/groups no longer present in source: mark `enabled = false`, keep in DB (user may have renamed them)
+Current implementation detail:
+- Scheduling is in-memory per app process. In multi-process or multi-instance deployments, each process would run its own timers unless coordinated externally.
 
 ---
 
-## EPG Refresh Logic
+## Current Limitations
 
-1. Re-fetch from `epg_url` (handle `.xml.gz` decompression)
-2. Write decompressed XML to `/app/data/raw/<id>.xml`
-3. Update `epg_last_fetched_at`
-4. No per-channel DB records needed — EPG is filtered at serve time by streaming the XML and matching `tvg-id` values
+- Single-user app; no authentication or authorization
+- No built-in video playback UI
+- No full XML parser for EPG filtering
+- Per-playlist settings do not currently support replacing the EPG via file upload after creation
+- M3U refresh matching can fall back to `display_name`, which may be imperfect when sources change significantly
 
----
-
-## Dockerfile (outline)
-
-```dockerfile
-FROM node:22-alpine
-WORKDIR /app
-COPY package*.json ./
-RUN npm ci
-COPY . .
-RUN npm run build
-EXPOSE 3000
-ENV DATABASE_PATH=/app/data/db.sqlite
-ENV RAW_DATA_PATH=/app/data/raw
-CMD ["node", "server.js"]
-```
-
-Volume mount: `-v /host/data:/app/data`
-
----
-
----
-
-## Global Settings (`/settings`)
-
-A single settings page (not per-playlist) for app-wide configuration.
-
-### Auto-Refresh
-
-Configure a background job that periodically re-fetches M3U and/or EPG sources for all playlists that have a URL source.
-
-| setting | type | default | notes |
-|---|---|---|---|
-| M3U auto-refresh enabled | boolean | false | |
-| M3U refresh interval | select | 24h | options: 1h, 6h, 12h, 24h, 7d |
-| EPG auto-refresh enabled | boolean | false | |
-| EPG refresh interval | select | 24h | options: 1h, 6h, 12h, 24h, 7d |
-
-On each refresh cycle:
-1. For every playlist with a URL-based M3U source: run the M3U refresh + merge logic
-2. For every playlist with a URL-based EPG source: re-download and cache the EPG file
-3. Log the result (timestamp, playlist name, success/error, channel delta: added/removed counts)
-
-**Refresh log** — shown on the Settings page as a table: timestamp, playlist, type (M3U/EPG), status (success/error), details (e.g. "+3 channels, -1 group" or error message). Last 50 entries kept.
-
-### Per-Playlist Refresh Override
-
-Each playlist can opt out of global auto-refresh. Toggle visible in `/playlists/[id]/settings` — "Include in auto-refresh" (default: on).
-
-### Data Model additions
-
-**`settings`** (key-value table)
-| column | type |
-|---|---|
-| key | text PK |
-| value | text |
-
-Keys: `m3u_auto_refresh_enabled`, `m3u_refresh_interval_seconds`, `epg_auto_refresh_enabled`, `epg_refresh_interval_seconds`
-
-**`refresh_log`**
-| column | type | notes |
-|---|---|---|
-| id | integer PK | |
-| playlist_id | integer FK | |
-| type | text | `"m3u"` or `"epg"` |
-| triggered_by | text | `"auto"` or `"manual"` |
-| status | text | `"success"` or `"error"` |
-| detail | text | channel delta or error message |
-| created_at | datetime | |
-
-### Background Job Implementation
-
-Use a lightweight in-process scheduler (e.g. `node-cron` or `setInterval` in a Next.js custom server) that reads the interval settings from the DB at startup and on settings change. Runs entirely within the container — no external job runner needed.
-
----
-
-## Out of Scope (v1)
-
-- User authentication (single-user, trusted local network)
-- Video playback within the web app
-- Merging multiple source playlists into one output
-- Stream health checking / dead link detection

@@ -1,3 +1,6 @@
+This is the canonical agent instructions file for this repository.
+Agent-specific files should defer to this file unless they need explicit overrides.
+
 <!-- BEGIN:nextjs-agent-rules -->
 # This is NOT the Next.js you know
 

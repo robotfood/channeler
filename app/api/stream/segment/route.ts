@@ -1,8 +1,16 @@
 export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
+import { toProxyResponse } from '@/lib/stream-proxy'
 
 const CONNECT_TIMEOUT_MS = 10_000
+
+function errorDetail(err: unknown) {
+  if (err instanceof Error) {
+    return err.name === 'AbortError' ? 'Segment fetch timeout' : err.message
+  }
+  return String(err)
+}
 
 export async function GET(req: NextRequest) {
   const url = req.nextUrl.searchParams.get('url')
@@ -14,9 +22,9 @@ export async function GET(req: NextRequest) {
   let upstream: Response
   try {
     upstream = await fetch(url, { redirect: 'follow', signal: abort.signal })
-  } catch (err: any) {
+  } catch (err: unknown) {
     clearTimeout(timer)
-    const msg = err?.name === 'AbortError' ? 'Segment fetch timeout' : String(err)
+    const msg = errorDetail(err)
     console.log(`[segment] ${new Date().toISOString()} error=${msg} url=${url}`)
     return new NextResponse(msg, { status: 502 })
   }
@@ -27,9 +35,6 @@ export async function GET(req: NextRequest) {
     return new NextResponse('Upstream error', { status: 502 })
   }
 
-  const headers = new Headers()
-  const contentType = upstream.headers.get('content-type')
-  if (contentType) headers.set('content-type', contentType)
-
-  return new NextResponse(upstream.body, { status: 200, headers })
+  const baseUrl = `${req.nextUrl.protocol}//${req.nextUrl.host}`
+  return toProxyResponse(upstream, url, baseUrl)
 }

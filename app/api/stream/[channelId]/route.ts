@@ -4,24 +4,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { channels, playlists, refreshLog } from '@/lib/schema'
 import { eq } from 'drizzle-orm'
-
-const HLS_TYPES = ['application/x-mpegurl', 'application/vnd.apple.mpegurl', 'audio/mpegurl']
+import { toProxyResponse } from '@/lib/stream-proxy'
 const CONNECT_TIMEOUT_MS = 10_000
-
-function isHLS(contentType: string | null) {
-  if (!contentType) return false
-  return HLS_TYPES.some(t => contentType.toLowerCase().includes(t))
-}
-
-function rewriteM3U8(text: string, upstreamUrl: string, baseUrl: string): string {
-  const base = new URL(upstreamUrl)
-  return text.split('\n').map(line => {
-    const trimmed = line.trim()
-    if (!trimmed || trimmed.startsWith('#')) return line
-    const absolute = trimmed.startsWith('http') ? trimmed : new URL(trimmed, base).toString()
-    return `${baseUrl}/api/stream/segment?url=${encodeURIComponent(absolute)}`
-  }).join('\n')
-}
 
 async function logStream(playlistId: number, channelName: string, status: 'success' | 'error', detail?: string) {
   const msg = detail ?? channelName
@@ -33,6 +17,13 @@ async function logStream(playlistId: number, channelName: string, status: 'succe
     status,
     detail: msg,
   })
+}
+
+function errorDetail(err: unknown) {
+  if (err instanceof Error) {
+    return err.name === 'AbortError' ? 'Connect timeout' : err.message
+  }
+  return String(err)
 }
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ channelId: string }> }) {
@@ -51,9 +42,9 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ chan
   let upstream: Response
   try {
     upstream = await fetch(channel.streamUrl, { redirect: 'follow', signal: abort.signal })
-  } catch (err: any) {
+  } catch (err: unknown) {
     clearTimeout(timer)
-    const detail = err?.name === 'AbortError' ? 'Connect timeout' : String(err)
+    const detail = errorDetail(err)
     await logStream(playlist.id, channel.displayName, 'error', detail)
     return new NextResponse(detail, { status: 502 })
   }
@@ -64,18 +55,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ chan
     return new NextResponse('Upstream error', { status: 502 })
   }
 
-  const contentType = upstream.headers.get('content-type') ?? ''
-  const headers = new Headers()
-  if (contentType) headers.set('content-type', contentType)
-
-  if (isHLS(contentType)) {
-    const text = await upstream.text()
-    const baseUrl = `${req.nextUrl.protocol}//${req.nextUrl.host}`
-    const rewritten = rewriteM3U8(text, channel.streamUrl, baseUrl)
-    await logStream(playlist.id, channel.displayName, 'success')
-    return new NextResponse(rewritten, { status: 200, headers })
-  }
-
+  const baseUrl = `${req.nextUrl.protocol}//${req.nextUrl.host}`
   await logStream(playlist.id, channel.displayName, 'success')
-  return new NextResponse(upstream.body, { status: 200, headers })
+  return toProxyResponse(upstream, channel.streamUrl, baseUrl)
 }
