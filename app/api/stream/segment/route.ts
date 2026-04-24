@@ -64,5 +64,5 @@ export async function GET(req: NextRequest) {
 
   const baseUrl = getPublicBaseUrl(req)
   const proxyContext = deriveProxyContext(url, upstream, requestContext)
-  return toProxyResponse(upstream, url, baseUrl, proxyContext)
+  return toProxyResponse(upstream, upstream.url || url, baseUrl, proxyContext)
 }

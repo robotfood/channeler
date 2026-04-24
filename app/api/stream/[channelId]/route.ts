@@ -84,5 +84,5 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ chan
   const baseUrl = getPublicBaseUrl(req)
   await logStream(playlist.id, channel.displayName, 'success')
   const proxyContext = deriveProxyContext(channel.streamUrl, upstream, requestContext)
-  return toProxyResponse(upstream, channel.streamUrl, baseUrl, proxyContext)
+  return toProxyResponse(upstream, upstream.url || channel.streamUrl, baseUrl, proxyContext)
 }
