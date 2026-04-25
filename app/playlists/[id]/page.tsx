@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState, useCallback, use } from 'react'
+import { useEffect, useState, useCallback, use, useMemo } from 'react'
 import Link from 'next/link'
 import {
   DndContext, closestCenter, PointerSensor, useSensor, useSensors, DragEndEvent,
@@ -229,16 +229,52 @@ export default function PlaylistEditor({ params }: { params: Promise<{ id: strin
     })))
   }
 
+  const channelIndex = useMemo(() => {
+    const byGroup = new Map<number, Channel[]>()
+    const statsByGroup = new Map<number, { total: number; enabled: number }>()
+    let totalEnabled = 0
+
+    for (const channel of data?.channels ?? []) {
+      const groupChannels = byGroup.get(channel.groupId)
+      if (groupChannels) {
+        groupChannels.push(channel)
+      } else {
+        byGroup.set(channel.groupId, [channel])
+      }
+
+      const stats = statsByGroup.get(channel.groupId) ?? { total: 0, enabled: 0 }
+      stats.total++
+      if (channel.enabled) {
+        stats.enabled++
+        totalEnabled++
+      }
+      statsByGroup.set(channel.groupId, stats)
+    }
+
+    return { byGroup, statsByGroup, totalEnabled }
+  }, [data?.channels])
+
+  const groupsById = useMemo(() => new Map((data?.groups ?? []).map(g => [g.id, g])), [data?.groups])
+  const groupSearchTerm = groupSearch.toLowerCase()
+  const channelSearchTerm = channelSearch.toLowerCase()
+
+  const filteredGroups = useMemo(
+    () => (data?.groups ?? []).filter(g => g.displayName.toLowerCase().includes(groupSearchTerm)),
+    [data?.groups, groupSearchTerm]
+  )
+  const selectedGroup = selectedGroupId ? groupsById.get(selectedGroupId) : undefined
+  const filteredChannels = useMemo(
+    () => {
+      const groupChannels = selectedGroupId ? (channelIndex.byGroup.get(selectedGroupId) ?? []) : []
+      return groupChannels.filter(c => c.displayName.toLowerCase().includes(channelSearchTerm))
+    },
+    [channelIndex.byGroup, selectedGroupId, channelSearchTerm]
+  )
+
+  const mergeTarget = groupsById.get(mergeIds[0])
+  const mergeSource = groupsById.get(mergeIds[1])
+
   if (!data) return <div className="text-gray-500 dark:text-gray-400">Loading...</div>
-
-  const filteredGroups = data.groups.filter(g => g.displayName.toLowerCase().includes(groupSearch.toLowerCase()))
-  const selectedGroup = data.groups.find(g => g.id === selectedGroupId)
-  const groupChannels = data.channels.filter(c => c.groupId === selectedGroupId)
-  const filteredChannels = groupChannels.filter(c => c.displayName.toLowerCase().includes(channelSearch.toLowerCase()))
-  const totalEnabled = data.channels.filter(c => c.enabled).length
-
-  const mergeTarget = data.groups.find(g => g.id === mergeIds[0])
-  const mergeSource = data.groups.find(g => g.id === mergeIds[1])
 
   return (
     <div className="mx-auto flex h-[calc(100vh-6rem)] w-full max-w-7xl flex-col">
@@ -246,7 +282,7 @@ export default function PlaylistEditor({ params }: { params: Promise<{ id: strin
         <div className="flex items-center gap-3">
           <Link href="/" className="text-gray-400 dark:text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 text-sm">← Playlists</Link>
           <h1 className="text-xl font-semibold">{data.name}</h1>
-          <span className="text-sm text-gray-400 dark:text-gray-500">{totalEnabled} / {data.channels.length} channels</span>
+          <span className="text-sm text-gray-400 dark:text-gray-500">{channelIndex.totalEnabled} / {data.channels.length} channels</span>
         </div>
         <div className="flex gap-2">
           {(data.m3uUrl || data.m3uSourceType === 'xtream') && (
@@ -310,8 +346,7 @@ export default function PlaylistEditor({ params }: { params: Promise<{ id: strin
             <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
               <SortableContext items={filteredGroups.map(g => g.id)} strategy={verticalListSortingStrategy}>
                 {filteredGroups.map(g => {
-                  const gChannels = data.channels.filter(c => c.groupId === g.id)
-                  const gEnabled = gChannels.filter(c => c.enabled).length
+                  const stats = channelIndex.statsByGroup.get(g.id) ?? { total: 0, enabled: 0 }
                   return (
                     <SortableGroup key={g.id} group={g}
                       selected={selectedGroupId === g.id}
@@ -320,8 +355,8 @@ export default function PlaylistEditor({ params }: { params: Promise<{ id: strin
                       onSelect={() => handleGroupClick(g.id)}
                       onToggle={() => patchGroup(g.id, { enabled: !g.enabled })}
                       onRename={name => patchGroup(g.id, { displayName: name })}
-                      channelCount={gChannels.length}
-                      enabledCount={gEnabled}
+                      channelCount={stats.total}
+                      enabledCount={stats.enabled}
                     />
                   )
                 })}

@@ -32,16 +32,33 @@ export async function GET() {
     .from(playlists)
     .orderBy(playlists.createdAt)
 
-  // attach counts
-  const result = await Promise.all(rows.map(async p => {
-    const allChannels = await db.select({ enabled: channels.enabled })
-      .from(channels).where(eq(channels.playlistId, p.id))
-    const total = allChannels.length
-    const enabled = allChannels.filter(c => c.enabled).length
-    const groupCount = await db.select({ count: sql<number>`count(*)` })
-      .from(groups).where(eq(groups.playlistId, p.id))
-    return { ...p, channelTotal: total, channelEnabled: enabled, groupCount: groupCount[0].count }
-  }))
+  const [channelCounts, groupCounts] = await Promise.all([
+    db.select({
+      playlistId: channels.playlistId,
+      total: sql<number>`count(*)`,
+      enabled: sql<number>`sum(case when ${channels.enabled} then 1 else 0 end)`,
+    }).from(channels).groupBy(channels.playlistId),
+    db.select({
+      playlistId: groups.playlistId,
+      count: sql<number>`count(*)`,
+    }).from(groups).groupBy(groups.playlistId),
+  ])
+
+  const channelCountByPlaylist = new Map(channelCounts.map(row => [
+    row.playlistId,
+    { total: Number(row.total) || 0, enabled: Number(row.enabled) || 0 },
+  ]))
+  const groupCountByPlaylist = new Map(groupCounts.map(row => [row.playlistId, Number(row.count) || 0]))
+
+  const result = rows.map(p => {
+    const channelCount = channelCountByPlaylist.get(p.id) ?? { total: 0, enabled: 0 }
+    return {
+      ...p,
+      channelTotal: channelCount.total,
+      channelEnabled: channelCount.enabled,
+      groupCount: groupCountByPlaylist.get(p.id) ?? 0,
+    }
+  })
 
   return NextResponse.json(result)
 }
