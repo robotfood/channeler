@@ -2,25 +2,18 @@ export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { playlists, groups, channels } from '@/lib/schema'
-import { eq, asc } from 'drizzle-orm'
+import { playlists } from '@/lib/schema'
+import { eq } from 'drizzle-orm'
 import { buildXtreamEpgUrl } from '@/lib/xtream'
+import { getPlaylistData } from '@/lib/app-data'
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   const playlistId = parseInt(id)
-  const [playlist] = await db.select().from(playlists).where(eq(playlists.id, playlistId))
+  const playlist = await getPlaylistData(playlistId)
   if (!playlist) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
-  const gs = await db.select().from(groups)
-    .where(eq(groups.playlistId, playlistId))
-    .orderBy(asc(groups.sortOrder))
-
-  const cs = await db.select().from(channels)
-    .where(eq(channels.playlistId, playlistId))
-    .orderBy(asc(channels.sortOrder))
-
-  return NextResponse.json({ ...playlist, groups: gs, channels: cs })
+  return NextResponse.json(playlist)
 }
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {

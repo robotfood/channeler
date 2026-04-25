@@ -2,65 +2,18 @@ export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { playlists, groups, channels } from '@/lib/schema'
-import { eq, sql } from 'drizzle-orm'
+import { playlists } from '@/lib/schema'
+import { eq } from 'drizzle-orm'
 import { ingestM3U, ingestEPG, fetchText, fetchBinary, ingestXtreamLive } from '@/lib/playlist-ops'
 import { buildXtreamEpgUrl } from '@/lib/xtream'
+import { getDashboardPlaylists } from '@/lib/app-data'
 
 function getErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : 'Unknown error'
 }
 
 export async function GET() {
-  const rows = await db
-    .select({
-      id: playlists.id,
-      name: playlists.name,
-      slug: playlists.slug,
-      m3uUrl: playlists.m3uUrl,
-      m3uSourceType: playlists.m3uSourceType,
-      xtreamServerUrl: playlists.xtreamServerUrl,
-      xtreamUsername: playlists.xtreamUsername,
-      xtreamOutput: playlists.xtreamOutput,
-      m3uLastFetchedAt: playlists.m3uLastFetchedAt,
-      epgUrl: playlists.epgUrl,
-      epgSourceType: playlists.epgSourceType,
-      epgLastFetchedAt: playlists.epgLastFetchedAt,
-      autoRefresh: playlists.autoRefresh,
-      createdAt: playlists.createdAt,
-    })
-    .from(playlists)
-    .orderBy(playlists.createdAt)
-
-  const [channelCounts, groupCounts] = await Promise.all([
-    db.select({
-      playlistId: channels.playlistId,
-      total: sql<number>`count(*)`,
-      enabled: sql<number>`sum(case when ${channels.enabled} then 1 else 0 end)`,
-    }).from(channels).groupBy(channels.playlistId),
-    db.select({
-      playlistId: groups.playlistId,
-      count: sql<number>`count(*)`,
-    }).from(groups).groupBy(groups.playlistId),
-  ])
-
-  const channelCountByPlaylist = new Map(channelCounts.map(row => [
-    row.playlistId,
-    { total: Number(row.total) || 0, enabled: Number(row.enabled) || 0 },
-  ]))
-  const groupCountByPlaylist = new Map(groupCounts.map(row => [row.playlistId, Number(row.count) || 0]))
-
-  const result = rows.map(p => {
-    const channelCount = channelCountByPlaylist.get(p.id) ?? { total: 0, enabled: 0 }
-    return {
-      ...p,
-      channelTotal: channelCount.total,
-      channelEnabled: channelCount.enabled,
-      groupCount: groupCountByPlaylist.get(p.id) ?? 0,
-    }
-  })
-
-  return NextResponse.json(result)
+  return NextResponse.json(await getDashboardPlaylists())
 }
 
 export async function POST(req: NextRequest) {

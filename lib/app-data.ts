@@ -1,0 +1,94 @@
+import { asc, desc, eq, sql } from 'drizzle-orm'
+import { db } from '@/lib/db'
+import { channels, groups, playlists, refreshLog, settings } from '@/lib/schema'
+
+export async function getDashboardPlaylists() {
+  const rows = await db
+    .select({
+      id: playlists.id,
+      name: playlists.name,
+      slug: playlists.slug,
+      m3uUrl: playlists.m3uUrl,
+      m3uSourceType: playlists.m3uSourceType,
+      xtreamServerUrl: playlists.xtreamServerUrl,
+      xtreamUsername: playlists.xtreamUsername,
+      xtreamOutput: playlists.xtreamOutput,
+      m3uLastFetchedAt: playlists.m3uLastFetchedAt,
+      epgUrl: playlists.epgUrl,
+      epgSourceType: playlists.epgSourceType,
+      epgLastFetchedAt: playlists.epgLastFetchedAt,
+      autoRefresh: playlists.autoRefresh,
+      createdAt: playlists.createdAt,
+    })
+    .from(playlists)
+    .orderBy(playlists.createdAt)
+
+  const [channelCounts, groupCounts] = await Promise.all([
+    db.select({
+      playlistId: channels.playlistId,
+      total: sql<number>`count(*)`,
+      enabled: sql<number>`sum(case when ${channels.enabled} then 1 else 0 end)`,
+    }).from(channels).groupBy(channels.playlistId),
+    db.select({
+      playlistId: groups.playlistId,
+      count: sql<number>`count(*)`,
+    }).from(groups).groupBy(groups.playlistId),
+  ])
+
+  const channelCountByPlaylist = new Map(channelCounts.map(row => [
+    row.playlistId,
+    { total: Number(row.total) || 0, enabled: Number(row.enabled) || 0 },
+  ]))
+  const groupCountByPlaylist = new Map(groupCounts.map(row => [row.playlistId, Number(row.count) || 0]))
+
+  return rows.map(p => {
+    const channelCount = channelCountByPlaylist.get(p.id) ?? { total: 0, enabled: 0 }
+    return {
+      ...p,
+      channelTotal: channelCount.total,
+      channelEnabled: channelCount.enabled,
+      groupCount: groupCountByPlaylist.get(p.id) ?? 0,
+    }
+  })
+}
+
+export async function getPlaylistData(playlistId: number) {
+  const [playlist] = await db.select().from(playlists).where(eq(playlists.id, playlistId))
+  if (!playlist) return null
+
+  const [playlistGroups, playlistChannels] = await Promise.all([
+    db.select().from(groups)
+      .where(eq(groups.playlistId, playlistId))
+      .orderBy(asc(groups.sortOrder)),
+    db.select().from(channels)
+      .where(eq(channels.playlistId, playlistId))
+      .orderBy(asc(channels.sortOrder)),
+  ])
+
+  return { ...playlist, groups: playlistGroups, channels: playlistChannels }
+}
+
+export async function getSettingsData() {
+  const rows = await db.select().from(settings)
+  const log = await db.select({
+    id: refreshLog.id,
+    playlistId: refreshLog.playlistId,
+    playlistName: playlists.name,
+    type: refreshLog.type,
+    triggeredBy: refreshLog.triggeredBy,
+    status: refreshLog.status,
+    detail: refreshLog.detail,
+    createdAt: refreshLog.createdAt,
+  })
+    .from(refreshLog)
+    .leftJoin(playlists, eq(refreshLog.playlistId, playlists.id))
+    .orderBy(desc(refreshLog.createdAt))
+    .limit(50)
+
+  return { settings: Object.fromEntries(rows.map(r => [r.key, r.value])), log }
+}
+
+export type DashboardPlaylist = Awaited<ReturnType<typeof getDashboardPlaylists>>[number]
+export type PlaylistData = NonNullable<Awaited<ReturnType<typeof getPlaylistData>>>
+export type PlaylistSettingsData = Omit<PlaylistData, 'groups' | 'channels'>
+export type SettingsData = Awaited<ReturnType<typeof getSettingsData>>

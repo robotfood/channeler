@@ -2,28 +2,12 @@ export const dynamic = 'force-dynamic'
 
 import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
-import { settings, refreshLog, playlists } from '@/lib/schema'
-import { eq, desc } from 'drizzle-orm'
+import { settings } from '@/lib/schema'
 import { reloadScheduler } from '@/lib/scheduler'
+import { getSettingsData } from '@/lib/app-data'
 
 export async function GET() {
-  const rows = await db.select().from(settings)
-  const log = await db.select({
-    id: refreshLog.id,
-    playlistId: refreshLog.playlistId,
-    playlistName: playlists.name,
-    type: refreshLog.type,
-    triggeredBy: refreshLog.triggeredBy,
-    status: refreshLog.status,
-    detail: refreshLog.detail,
-    createdAt: refreshLog.createdAt,
-  })
-    .from(refreshLog)
-    .leftJoin(playlists, eq(refreshLog.playlistId, playlists.id))
-    .orderBy(desc(refreshLog.createdAt))
-    .limit(50)
-
-  return NextResponse.json({ settings: Object.fromEntries(rows.map(r => [r.key, r.value])), log })
+  return NextResponse.json(await getSettingsData())
 }
 
 export async function PATCH(req: NextRequest) {
