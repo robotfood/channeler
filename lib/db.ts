@@ -3,13 +3,17 @@ import { drizzle } from 'drizzle-orm/sqlite-proxy'
 import * as schema from './schema'
 import path from 'path'
 import fs from 'fs'
+import os from 'os'
 
-const dataPath = process.env.DATA_PATH ?? path.join(process.cwd(), 'data')
+const isNextBuild = process.env.NEXT_PHASE === 'phase-production-build' || process.env.npm_lifecycle_event === 'build'
+const dataPath = isNextBuild
+  ? path.join(os.tmpdir(), `channeler-build-${process.pid}`)
+  : process.env.DATA_PATH ?? path.join(process.cwd(), 'data')
 fs.mkdirSync(dataPath, { recursive: true })
 fs.mkdirSync(path.join(dataPath, 'raw'), { recursive: true })
 
 const dbPath = path.join(dataPath, 'db.sqlite')
-const sqlite = new DatabaseSync(dbPath)
+const sqlite = new DatabaseSync(dbPath, { timeout: 10000 })
 sqlite.exec('PRAGMA journal_mode = WAL')
 sqlite.exec('PRAGMA foreign_keys = ON')
 
