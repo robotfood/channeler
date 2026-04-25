@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "test:xtream": "node --import tsx tests/xtream-integration.ts"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

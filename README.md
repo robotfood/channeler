@@ -71,3 +71,64 @@ Runs on [http://localhost:3000](http://localhost:3000). Data is stored in `./dat
 | `DATA_PATH` | `./data` | Path to SQLite DB and raw cache files |
 | `PORT` | `3000` | Port to listen on |
 | `PUBLIC_BASE_URL` | unset | External base URL used when generating proxied stream URLs, e.g. `http://your-server:3000` |
+
+## Xtream Integration Test
+
+You can test the native Xtream import path against a real provider without touching your app data.
+
+1. Copy `.env.xtream.example` to `.env.xtream.local`
+
+```bash
+cp .env.xtream.example .env.xtream.local
+```
+
+2. Fill in the Xtream credentials in `.env.xtream.local`:
+
+```env
+TEST_XTREAM_SERVER_URL=http://your-provider.example
+TEST_XTREAM_USERNAME=your-username
+TEST_XTREAM_PASSWORD=your-password
+TEST_XTREAM_OUTPUT=ts
+TEST_XTREAM_TEST_EPG=true
+```
+
+3. Run the integration test:
+
+```bash
+npm run test:xtream
+```
+
+4. Optional:
+- Set `TEST_XTREAM_OUTPUT=m3u8` to validate `m3u8` live stream URLs
+- Set `TEST_XTREAM_TEST_EPG=false` if you only want to test live TV import
+- Set `ENV_FILE=/path/to/custom.env` to use a different env file
+
+The test:
+- creates a temporary `DATA_PATH`
+- runs migrations
+- inserts a temporary Xtream-backed playlist
+- syncs live categories and streams through `player_api.php`
+- verifies channels/groups were imported
+- runs a refresh pass
+- optionally fetches and caches XMLTV when `TEST_XTREAM_TEST_EPG=true`
+
+Notes:
+- Some IPTV providers only allow API access from specific regions or networks. If the test fails while the credentials are known-good, you may need to connect through the same VPN or network location you use in your IPTV app.
+- The test uses a temporary database and raw cache directory under your system temp folder, so it does not modify your normal `./data` folder.
+
+Sample successful output:
+
+```text
+$ npm run test:xtream
+
+> channeler@0.1.0 test:xtream
+> node --import tsx tests/xtream-integration.ts
+
+Env file: /Users/emmett/projects/channeler/.env.xtream.local
+Temp DATA_PATH: /var/folders/3y/c09w7pb53m93qls9rtpy5tg80000gn/T/channeler-xtream-test-8Ewhzk
+Imported groups: 870
+Imported channels: 52995
+Initial ingest: +52995 added, 0 updated, 0 removed
+Refresh ingest: +0 added, 52995 updated, 4688 removed
+EPG verified: yes
+```

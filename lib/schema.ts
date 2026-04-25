@@ -36,6 +36,7 @@ export const channels = sqliteTable('channels', {
   tvgId: text('tvg_id'),
   tvgName: text('tvg_name'),
   tvgLogo: text('tvg_logo'),
+  sourceKey: text('channel_source_key'),
   displayName: text('display_name').notNull(),
   streamUrl: text('stream_url').notNull(),
   enabled: integer('enabled', { mode: 'boolean' }).notNull().default(true),

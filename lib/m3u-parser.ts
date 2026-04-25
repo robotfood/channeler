@@ -5,6 +5,7 @@ export interface ParsedChannel {
   groupTitle: string
   displayName: string
   streamUrl: string
+  sourceKey?: string
 }
 
 export function parseM3U(content: string): ParsedChannel[] {

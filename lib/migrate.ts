@@ -5,19 +5,6 @@ function slugify(name: string): string {
 }
 
 export function runMigrations() {
-  try { sqlite.exec(`ALTER TABLE playlists ADD COLUMN proxy_streams INTEGER NOT NULL DEFAULT 0`) } catch {}
-  try { sqlite.exec(`ALTER TABLE playlists ADD COLUMN slug TEXT NOT NULL DEFAULT ''`) } catch {}
-  try { sqlite.exec(`ALTER TABLE playlists ADD COLUMN xtream_server_url TEXT`) } catch {}
-  try { sqlite.exec(`ALTER TABLE playlists ADD COLUMN xtream_username TEXT`) } catch {}
-  try { sqlite.exec(`ALTER TABLE playlists ADD COLUMN xtream_password TEXT`) } catch {}
-  try { sqlite.exec(`ALTER TABLE playlists ADD COLUMN xtream_output TEXT`) } catch {}
-
-  // Populate slugs for existing playlists that don't have one
-  const rows = sqlite.prepare(`SELECT id, name FROM playlists WHERE slug = '' OR slug IS NULL`).all() as { id: number; name: string }[]
-  for (const row of rows) {
-    sqlite.prepare(`UPDATE playlists SET slug = ? WHERE id = ?`).run(slugify(row.name), row.id)
-  }
-
   sqlite.exec(`
     CREATE TABLE IF NOT EXISTS playlists (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -54,6 +41,7 @@ export function runMigrations() {
       tvg_id TEXT,
       tvg_name TEXT,
       tvg_logo TEXT,
+      channel_source_key TEXT,
       display_name TEXT NOT NULL,
       stream_url TEXT NOT NULL,
       enabled INTEGER NOT NULL DEFAULT 1,
@@ -88,5 +76,36 @@ export function runMigrations() {
       ('m3u_refresh_interval_seconds', '86400'),
       ('epg_auto_refresh_enabled', 'false'),
       ('epg_refresh_interval_seconds', '86400');
+  `)
+
+  try { sqlite.exec(`ALTER TABLE playlists ADD COLUMN proxy_streams INTEGER NOT NULL DEFAULT 0`) } catch {}
+  try { sqlite.exec(`ALTER TABLE playlists ADD COLUMN slug TEXT NOT NULL DEFAULT ''`) } catch {}
+  try { sqlite.exec(`ALTER TABLE playlists ADD COLUMN xtream_server_url TEXT`) } catch {}
+  try { sqlite.exec(`ALTER TABLE playlists ADD COLUMN xtream_username TEXT`) } catch {}
+  try { sqlite.exec(`ALTER TABLE playlists ADD COLUMN xtream_password TEXT`) } catch {}
+  try { sqlite.exec(`ALTER TABLE playlists ADD COLUMN xtream_output TEXT`) } catch {}
+  try { sqlite.exec(`ALTER TABLE channels ADD COLUMN channel_source_key TEXT`) } catch {}
+
+  // Populate slugs for existing playlists that don't have one
+  const rows = sqlite.prepare(`SELECT id, name FROM playlists WHERE slug = '' OR slug IS NULL`).all() as { id: number; name: string }[]
+  for (const row of rows) {
+    sqlite.prepare(`UPDATE playlists SET slug = ? WHERE id = ?`).run(slugify(row.name), row.id)
+  }
+
+  sqlite.exec(`
+    UPDATE channels
+    SET channel_source_key = CASE
+      WHEN tvg_id IS NOT NULL
+        AND tvg_id != ''
+        AND (
+          SELECT COUNT(*)
+          FROM channels AS matching_channels
+          WHERE matching_channels.playlist_id = channels.playlist_id
+            AND matching_channels.tvg_id = channels.tvg_id
+        ) = 1
+      THEN 'tvg:' || tvg_id
+      ELSE 'url:' || stream_url
+    END
+    WHERE channel_source_key IS NULL OR channel_source_key = '';
   `)
 }

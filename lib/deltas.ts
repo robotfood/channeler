@@ -10,8 +10,12 @@ export type Delta =
   | { type: 'channel_rename'; channelKey: string; displayName: string }
   | { type: 'channel_enabled'; channelKey: string; enabled: boolean }
 
-export function channelKey(c: { tvgId: string | null; tvgName: string | null; displayName: string }): string {
+export function legacyChannelKey(c: { tvgId: string | null; tvgName: string | null; displayName: string }): string {
   return c.tvgId || c.tvgName || c.displayName
+}
+
+export function channelKey(c: { sourceKey?: string | null; tvgId: string | null; tvgName: string | null; displayName: string }): string {
+  return c.sourceKey || legacyChannelKey(c)
 }
 
 export async function writeDelta(playlistId: number, delta: Delta) {
@@ -48,6 +52,10 @@ export async function applyDeltas(playlistId: number) {
 
   const groupByName = new Map(allGroups.map(g => [g.originalName, g]))
   const channelByKey = new Map(allChannels.map(c => [channelKey(c), c]))
+  for (const channel of allChannels) {
+    const legacyKey = legacyChannelKey(channel)
+    if (!channelByKey.has(legacyKey)) channelByKey.set(legacyKey, channel)
+  }
 
   // Merges first — they affect which groups exist
   for (const { targetName, sourceName } of merges) {

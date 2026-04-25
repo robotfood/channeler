@@ -220,10 +220,11 @@ export default function PlaylistEditor({ params }: { params: Promise<{ id: strin
     })))
   }
 
-  async function bulkToggleAllGroups(enabled: boolean) {
-    if (!data) return
-    setData(d => d ? { ...d, groups: d.groups.map(g => ({ ...g, enabled })) } : d)
-    await Promise.all(data.groups.map(g => fetch(`/api/groups/${g.id}`, {
+  async function bulkToggleGroups(targetGroups: Group[], enabled: boolean) {
+    if (!data || targetGroups.length === 0) return
+    const ids = new Set(targetGroups.map(g => g.id))
+    setData(d => d ? { ...d, groups: d.groups.map(g => ids.has(g.id) ? { ...g, enabled } : g) } : d)
+    await Promise.all(targetGroups.map(g => fetch(`/api/groups/${g.id}`, {
       method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled }),
     })))
   }
@@ -240,7 +241,7 @@ export default function PlaylistEditor({ params }: { params: Promise<{ id: strin
   const mergeSource = data.groups.find(g => g.id === mergeIds[1])
 
   return (
-    <div className="flex flex-col h-[calc(100vh-8rem)]">
+    <div className="mx-auto flex h-[calc(100vh-6rem)] w-full max-w-7xl flex-col">
       <div className="flex items-center justify-between mb-4 gap-4">
         <div className="flex items-center gap-3">
           <Link href="/" className="text-gray-400 dark:text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 text-sm">← Playlists</Link>
@@ -267,9 +268,9 @@ export default function PlaylistEditor({ params }: { params: Promise<{ id: strin
         </div>
       </div>
 
-      <div className="flex flex-1 gap-4 overflow-hidden">
+      <div className="grid min-h-0 flex-1 grid-cols-[18rem_minmax(0,1fr)] gap-4 overflow-hidden">
         {/* Left: groups */}
-        <div className="w-72 flex flex-col bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-lg overflow-hidden shrink-0">
+        <div className="min-h-0 flex flex-col bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-lg overflow-hidden">
           <div className="p-3 border-b border-gray-200 dark:border-gray-800 space-y-2">
             {merging ? (
               <div className="space-y-2">
@@ -296,9 +297,9 @@ export default function PlaylistEditor({ params }: { params: Promise<{ id: strin
                 <input value={groupSearch} onChange={e => setGroupSearch(e.target.value)}
                   placeholder="Search groups..." className={inputCls} />
                 <div className="flex gap-2 text-xs">
-                  <button onClick={() => bulkToggleAllGroups(true)} className="text-blue-600 dark:text-blue-400 hover:text-blue-500 dark:hover:text-blue-300">Enable all</button>
+                  <button onClick={() => bulkToggleGroups(filteredGroups, true)} className="text-blue-600 dark:text-blue-400 hover:text-blue-500 dark:hover:text-blue-300">Enable all</button>
                   <span className="text-gray-300 dark:text-gray-700">·</span>
-                  <button onClick={() => bulkToggleAllGroups(false)} className="text-blue-600 dark:text-blue-400 hover:text-blue-500 dark:hover:text-blue-300">Disable all</button>
+                  <button onClick={() => bulkToggleGroups(filteredGroups, false)} className="text-blue-600 dark:text-blue-400 hover:text-blue-500 dark:hover:text-blue-300">Disable all</button>
                   <span className="text-gray-300 dark:text-gray-700">·</span>
                   <button onClick={() => setMerging(true)} className="text-blue-600 dark:text-blue-400 hover:text-blue-500 dark:hover:text-blue-300">Merge</button>
                 </div>
@@ -330,7 +331,7 @@ export default function PlaylistEditor({ params }: { params: Promise<{ id: strin
         </div>
 
         {/* Right: channels */}
-        <div className="flex-1 flex flex-col bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-lg overflow-hidden">
+        <div className="min-h-0 flex flex-col bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-lg overflow-hidden">
           <div className="p-3 border-b border-gray-200 dark:border-gray-800 space-y-2">
             <div className="flex items-center justify-between gap-2">
               <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
@@ -383,12 +384,20 @@ function ChannelRow({ channel, onToggle, onRename }: {
   const [draft, setDraft] = useState(channel.displayName)
 
   return (
-    <div className="flex items-center gap-3 px-2 py-1.5 rounded hover:bg-gray-50 dark:hover:bg-gray-800 group">
+    <div className="flex min-h-9 items-center gap-3 px-2 py-1.5 rounded hover:bg-gray-50 dark:hover:bg-gray-800 group">
       <input type="checkbox" checked={channel.enabled} onChange={onToggle}
         className="rounded border-gray-300 dark:border-gray-600 accent-blue-500 shrink-0" />
       {channel.tvgLogo && (
         // eslint-disable-next-line @next/next/no-img-element
-        <img src={`/api/proxy/logo?url=${encodeURIComponent(channel.tvgLogo)}`} alt="" className="w-6 h-6 object-contain rounded shrink-0" onError={e => { (e.target as HTMLImageElement).style.display = 'none' }} />
+        <img
+          src={`/api/proxy/logo?url=${encodeURIComponent(channel.tvgLogo)}`}
+          alt=""
+          width={24}
+          height={24}
+          className="size-6 object-contain rounded shrink-0"
+          style={{ width: 24, height: 24, maxWidth: 24, maxHeight: 24 }}
+          onError={e => { (e.target as HTMLImageElement).style.display = 'none' }}
+        />
       )}
       {editing
         ? <input autoFocus value={draft}

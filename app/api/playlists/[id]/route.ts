@@ -4,7 +4,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { playlists, groups, channels } from '@/lib/schema'
 import { eq, asc } from 'drizzle-orm'
-import { buildXtreamEpgUrl, buildXtreamM3uUrl } from '@/lib/xtream'
+import { buildXtreamEpgUrl } from '@/lib/xtream'
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
@@ -50,16 +50,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   const nextXtreamServerUrl = updates.xtreamServerUrl ?? current.xtreamServerUrl
   const nextXtreamUsername = updates.xtreamUsername ?? current.xtreamUsername
   const nextXtreamPassword = updates.xtreamPassword ?? current.xtreamPassword
-  const nextXtreamOutput = updates.xtreamOutput ?? current.xtreamOutput
 
-  if (nextM3uSourceType === 'xtream' && nextXtreamServerUrl && nextXtreamUsername && nextXtreamPassword) {
-    updates.m3uUrl = buildXtreamM3uUrl({
-      serverUrl: String(nextXtreamServerUrl),
-      username: String(nextXtreamUsername),
-      password: String(nextXtreamPassword),
-      output: typeof nextXtreamOutput === 'string' ? nextXtreamOutput : null,
-    })
-  }
+  if (nextM3uSourceType === 'xtream') updates.m3uUrl = null
 
   if (nextEpgSourceType === 'xtream' && nextXtreamServerUrl && nextXtreamUsername && nextXtreamPassword) {
     updates.epgUrl = buildXtreamEpgUrl({

@@ -1,13 +1,28 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useSyncExternalStore } from 'react'
+
+function subscribe(onStoreChange: () => void) {
+  const onChange = () => onStoreChange()
+  window.addEventListener('storage', onChange)
+  window.addEventListener('themechange', onChange)
+  return () => {
+    window.removeEventListener('storage', onChange)
+    window.removeEventListener('themechange', onChange)
+  }
+}
+
+function getServerSnapshot() {
+  return true
+}
+
+function getClientSnapshot() {
+  const saved = localStorage.getItem('theme')
+  return saved ? saved === 'dark' : true
+}
 
 export default function ThemeToggle() {
-  const [dark, setDark] = useState(() => {
-    if (typeof window === 'undefined') return true
-    const saved = localStorage.getItem('theme')
-    return saved ? saved === 'dark' : true
-  })
+  const dark = useSyncExternalStore(subscribe, getClientSnapshot, getServerSnapshot)
 
   useEffect(() => {
     document.documentElement.classList.toggle('dark', dark)
@@ -15,9 +30,9 @@ export default function ThemeToggle() {
 
   function toggle() {
     const next = !dark
-    setDark(next)
     document.documentElement.classList.toggle('dark', next)
     localStorage.setItem('theme', next ? 'dark' : 'light')
+    window.dispatchEvent(new Event('themechange'))
   }
 
   return (
