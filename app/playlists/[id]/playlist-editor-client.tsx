@@ -10,6 +10,7 @@ import {
   SortableContext, verticalListSortingStrategy, useSortable, arrayMove,
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
+import ChannelPlayer from '@/components/channel-player'
 
 type Group = PlaylistData['groups'][number]
 type Channel = PlaylistData['channels'][number]
@@ -81,6 +82,7 @@ export default function PlaylistEditorClient({ initialData, playlistId }: {
   const [groupSearch, setGroupSearch] = useState('')
   const [channelSearch, setChannelSearch] = useState('')
   const [showTrash, setShowTrash] = useState(false)
+  const [playingChannel, setPlayingChannel] = useState<Channel | null>(null)
   const [refreshing, setRefreshing] = useState<'m3u' | 'epg' | null>(null)
   const [toast, setToast] = useState('')
   const [merging, setMerging] = useState(false)
@@ -278,7 +280,7 @@ export default function PlaylistEditorClient({ initialData, playlistId }: {
         </div>
       </div>
 
-      <div className="grid min-h-0 flex-1 grid-cols-[18rem_minmax(0,1fr)] gap-4 overflow-hidden">
+      <div className={`grid min-h-0 flex-1 gap-4 overflow-hidden transition-all duration-300 ${playingChannel ? 'grid-cols-[16rem_1fr_24rem]' : 'grid-cols-[18rem_minmax(0,1fr)]'}`}>
         {/* Left: groups */}
         <div className="min-h-0 flex flex-col bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-lg overflow-hidden">
           <div className="p-3 border-b border-gray-200 dark:border-gray-800 space-y-2">
@@ -377,6 +379,7 @@ export default function PlaylistEditorClient({ initialData, playlistId }: {
                 onToggle={() => patchChannel(ch.id, { enabled: !ch.enabled })}
                 onRename={name => patchChannel(ch.id, { displayName: name })}
                 onDelete={() => patchChannel(ch.id, { isDeleted: !ch.isDeleted })}
+                onPlay={() => setPlayingChannel(ch)}
               />
             ))}
             {filteredChannels.length === 0 && (
@@ -386,6 +389,17 @@ export default function PlaylistEditorClient({ initialData, playlistId }: {
             )}
           </div>
         </div>
+
+        {/* Right: player */}
+        {playingChannel && (
+          <div className="min-h-0 flex flex-col">
+            <ChannelPlayer
+              title={playingChannel.displayName}
+              url={data.proxyStreams ? `/api/stream/${playingChannel.id}` : playingChannel.streamUrl}
+              onClose={() => setPlayingChannel(null)}
+            />
+          </div>
+        )}
       </div>
 
       {toast && (
@@ -397,11 +411,12 @@ export default function PlaylistEditorClient({ initialData, playlistId }: {
   )
 }
 
-function ChannelRow({ channel, onToggle, onRename, onDelete }: {
+function ChannelRow({ channel, onToggle, onRename, onDelete, onPlay }: {
   channel: Channel
   onToggle: () => void
   onRename: (name: string) => void
   onDelete: () => void
+  onPlay: () => void
 }) {
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(channel.displayName)
@@ -435,21 +450,34 @@ function ChannelRow({ channel, onToggle, onRename, onDelete }: {
             {channel.displayName}
           </span>
       }
-      <button
-        onClick={onDelete}
-        title={channel.isDeleted ? 'Restore channel' : 'Delete channel'}
-        className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-400 hover:text-red-500 transition-all"
-      >
-        {channel.isDeleted ? (
-          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-          </svg>
-        ) : (
-          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-          </svg>
+      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all">
+        {!channel.isDeleted && (
+          <button
+            onClick={onPlay}
+            title="Play channel"
+            className="p-1 rounded hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-400 hover:text-blue-500 transition-colors"
+          >
+            <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+              <path d="M8 5v14l11-7z" />
+            </svg>
+          </button>
         )}
-      </button>
+        <button
+          onClick={onDelete}
+          title={channel.isDeleted ? 'Restore channel' : 'Delete channel'}
+          className="p-1 rounded hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-400 hover:text-red-500 transition-colors"
+        >
+          {channel.isDeleted ? (
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+          ) : (
+            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+            </svg>
+          )}
+        </button>
+      </div>
     </div>
   )
 }
