@@ -10,45 +10,46 @@ import fs from 'fs'
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
-  const channelId = parseInt(id)
+  const groupId = parseInt(id)
 
-  const [channel] = await db.select().from(channels).where(eq(channels.id, channelId))
-  if (!channel || !channel.tvgId) return new NextResponse('Not found', { status: 404 })
+  const groupChannels = await db.select().from(channels).where(eq(channels.groupId, groupId))
+  if (groupChannels.length === 0) return NextResponse.json({})
 
-  const epgPath = rawEPGPath(channel.playlistId)
-  if (!fs.existsSync(epgPath)) return new NextResponse('No EPG', { status: 404 })
+  const playlistId = groupChannels[0].playlistId
+  const epgPath = rawEPGPath(playlistId)
+  if (!fs.existsSync(epgPath)) return NextResponse.json({})
 
   const raw = fs.readFileSync(epgPath, 'utf-8')
   
-  // Extract programs for this channel
+  // Map tvgId to channelId for quick lookup
+  const tvgToChannelId = new Map<string, number>()
+  for (const ch of groupChannels) {
+    if (ch.tvgId) tvgToChannelId.set(ch.tvgId, ch.id)
+  }
+
   const programmeRegex = /<programme\s+[^>]*start="([^"]*)"\s+[^>]*stop="([^"]*)"\s+[^>]*channel="([^"]*)"[^>]*>([\s\S]*?)<\/programme>/g
   
   const now = new Date()
-  let currentProgram = null
+  const currentEpg: Record<number, { title: string }> = {}
 
   let m: RegExpExecArray | null
   while ((m = programmeRegex.exec(raw)) !== null) {
     const [, startStr, stopStr, chId, content] = m
-    if (chId !== channel.tvgId) continue
+    const channelId = tvgToChannelId.get(chId)
+    if (!channelId) continue
 
     const start = parseXMLTVDate(startStr)
     const stop = parseXMLTVDate(stopStr)
 
     if (now >= start && now < stop) {
       const titleMatch = /<title[^>]*>(.*?)<\/title>/.exec(content)
-      const descMatch = /<desc[^>]*>(.*?)<\/desc>/.exec(content)
-      
-      currentProgram = {
-        title: titleMatch ? titleMatch[1] : 'No Title',
-        desc: descMatch ? descMatch[1] : '',
-        start: start.toISOString(),
-        stop: stop.toISOString()
+      if (titleMatch) {
+        currentEpg[channelId] = {
+          title: titleMatch[1]
+        }
       }
-      break
     }
   }
 
-  if (!currentProgram) return new NextResponse('No current program', { status: 404 })
-
-  return NextResponse.json(currentProgram)
+  return NextResponse.json(currentEpg)
 }

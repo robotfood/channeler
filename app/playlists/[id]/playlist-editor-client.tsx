@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback, useMemo } from 'react'
+import { useState, useCallback, useMemo, useEffect } from 'react'
 import Link from 'next/link'
 import type { PlaylistData } from '@/lib/app-data'
 import {
@@ -83,6 +83,7 @@ export default function PlaylistEditorClient({ initialData, playlistId }: {
   const [channelSearch, setChannelSearch] = useState('')
   const [showTrash, setShowTrash] = useState(false)
   const [playingChannel, setPlayingChannel] = useState<Channel | null>(null)
+  const [groupEpg, setGroupEpg] = useState<Record<number, { title: string }>>({})
   const [refreshing, setRefreshing] = useState<'m3u' | 'epg' | null>(null)
   const [toast, setToast] = useState('')
   const [merging, setMerging] = useState(false)
@@ -91,6 +92,14 @@ export default function PlaylistEditorClient({ initialData, playlistId }: {
   const sensors = useSensors(useSensor(PointerSensor))
 
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(''), 3000) }
+
+  useEffect(() => {
+    if (!selectedGroupId) return
+    fetch(`/api/groups/${selectedGroupId}/epg`)
+      .then(res => res.json())
+      .then(setGroupEpg)
+      .catch(() => {})
+  }, [selectedGroupId])
 
   const patchGroup = useCallback(async (groupId: number, updates: Partial<Group>) => {
     setData(d => d ? { ...d, groups: d.groups.map(g => g.id === groupId ? { ...g, ...updates } : g) } : d)
@@ -380,6 +389,7 @@ export default function PlaylistEditorClient({ initialData, playlistId }: {
                 onRename={name => patchChannel(ch.id, { displayName: name })}
                 onDelete={() => patchChannel(ch.id, { isDeleted: !ch.isDeleted })}
                 onPlay={() => setPlayingChannel(ch)}
+                epgTitle={groupEpg[ch.id]?.title}
               />
             ))}
             {filteredChannels.length === 0 && (
@@ -412,12 +422,13 @@ export default function PlaylistEditorClient({ initialData, playlistId }: {
   )
 }
 
-function ChannelRow({ channel, onToggle, onRename, onDelete, onPlay }: {
+function ChannelRow({ channel, onToggle, onRename, onDelete, onPlay, epgTitle }: {
   channel: Channel
   onToggle: () => void
   onRename: (name: string) => void
   onDelete: () => void
   onPlay: () => void
+  epgTitle?: string
 }) {
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(channel.displayName)
@@ -446,10 +457,17 @@ function ChannelRow({ channel, onToggle, onRename, onDelete, onPlay }: {
             onBlur={() => { setEditing(false); onRename(draft) }}
             onKeyDown={e => { if (e.key === 'Enter') { setEditing(false); onRename(draft) } if (e.key === 'Escape') { setEditing(false); setDraft(channel.displayName) } }}
             className="flex-1 bg-gray-100 dark:bg-gray-700 rounded px-2 py-0.5 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500 min-w-0" />
-        : <span onDoubleClick={() => setEditing(true)}
-            className={`flex-1 text-sm truncate ${channel.isDeleted ? 'text-gray-400 italic' : ''}`} title="Double-click to rename">
-            {channel.displayName}
-          </span>
+        : <div className="flex-1 flex items-center justify-between min-w-0 gap-4">
+            <span onDoubleClick={() => setEditing(true)}
+                className={`text-sm truncate ${channel.isDeleted ? 'text-gray-400 italic' : ''}`} title="Double-click to rename">
+                {channel.displayName}
+            </span>
+            {epgTitle && (
+              <span className="text-[11px] text-gray-400 dark:text-gray-500 truncate flex-1 text-right italic" title={epgTitle}>
+                {epgTitle}
+              </span>
+            )}
+          </div>
       }
       <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all">
         {!channel.isDeleted && (
