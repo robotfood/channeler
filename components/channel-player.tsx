@@ -6,13 +6,43 @@ import Hls from 'hls.js'
 interface Props {
   url: string
   title: string
+  channelId: number
   onClose: () => void
 }
 
-export default function ChannelPlayer({ url, title, onClose }: Props) {
+interface EpgData {
+  title: string
+  desc: string
+  start: string
+  stop: string
+}
+
+export default function ChannelPlayer({ url, title, channelId, onClose }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null)
   const [error, setError] = useState<string | null>(null)
+  const [epg, setEpg] = useState<EpgData | null>(null)
+  const [loadingEpg, setLoadingEpg] = useState(false)
   const hlsRef = useRef<Hls | null>(null)
+
+  useEffect(() => {
+    async function fetchEpg() {
+      setLoadingEpg(true)
+      try {
+        const res = await fetch(`/api/channels/${channelId}/epg`)
+        if (res.ok) {
+          const data = await res.json()
+          setEpg(data)
+        } else {
+          setEpg(null)
+        }
+      } catch {
+        setEpg(null)
+      } finally {
+        setLoadingEpg(false)
+      }
+    }
+    fetchEpg()
+  }, [channelId])
 
   useEffect(() => {
     const video = videoRef.current
@@ -89,6 +119,48 @@ export default function ChannelPlayer({ url, title, onClose }: Props) {
             autoPlay
             playsInline
           />
+        )}
+      </div>
+
+      <div className="p-4 bg-gray-900 border-t border-gray-800 flex-none min-h-[120px]">
+        {loadingEpg ? (
+          <div className="animate-pulse space-y-2">
+            <div className="h-4 bg-gray-800 rounded w-3/4"></div>
+            <div className="h-3 bg-gray-800 rounded w-1/2"></div>
+            <div className="h-12 bg-gray-800 rounded w-full"></div>
+          </div>
+        ) : epg ? (
+          <div className="space-y-2">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-xs font-semibold text-blue-400 uppercase tracking-wider">Now Playing</span>
+              <span className="text-[10px] text-gray-500 font-mono">
+                {new Date(epg.start).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} - {new Date(epg.stop).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+              </span>
+            </div>
+            <h3 className="text-sm font-bold leading-tight">{epg.title}</h3>
+            {epg.desc && (
+              <p className="text-xs text-gray-400 line-clamp-3 leading-normal">{epg.desc}</p>
+            )}
+            
+            {/* Progress Bar */}
+            <div className="pt-1">
+              <div className="h-1 bg-gray-800 rounded-full overflow-hidden">
+                <div 
+                  className="h-full bg-blue-500 transition-all duration-1000"
+                  style={{ 
+                    width: `${Math.max(0, Math.min(100, 
+                      ((new Date().getTime() - new Date(epg.start).getTime()) / 
+                      (new Date(epg.stop).getTime() - new Date(epg.start).getTime())) * 100
+                    ))}%` 
+                  }}
+                />
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="flex items-center justify-center h-full text-gray-500 text-xs italic">
+            No EPG information available
+          </div>
         )}
       </div>
     </div>

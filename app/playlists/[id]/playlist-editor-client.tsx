@@ -395,6 +395,7 @@ export default function PlaylistEditorClient({ initialData, playlistId }: {
           <div className="min-h-0 flex flex-col">
             <ChannelPlayer
               title={playingChannel.displayName}
+              channelId={playingChannel.id}
               url={data.proxyStreams ? `/api/stream/${playingChannel.id}` : playingChannel.streamUrl}
               onClose={() => setPlayingChannel(null)}
             />
