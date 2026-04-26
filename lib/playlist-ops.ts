@@ -12,7 +12,7 @@ import {
   type XtreamLiveStream,
   type XtreamPlayerApiResponse,
 } from './xtream'
-import { eq, inArray } from 'drizzle-orm'
+import { eq } from 'drizzle-orm'
 import fs from 'fs'
 import path from 'path'
 import zlib from 'zlib'
@@ -191,11 +191,7 @@ async function ingestChannels(playlistId: number, parsed: ParsedChannel[], rawCo
   }
 
   const missingIds = existingChannels.map(c => c.id).filter(id => !seenIds.has(id))
-  let removed = 0
-  if (missingIds.length > 0) {
-    await db.update(channels).set({ enabled: false }).where(inArray(channels.id, missingIds))
-    removed = missingIds.length
-  }
+  const removed = missingIds.length
 
   await db.update(playlists)
     .set({ m3uLastFetchedAt: new Date().toISOString() })
