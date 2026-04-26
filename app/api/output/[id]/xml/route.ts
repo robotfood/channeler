@@ -23,7 +23,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
 
   const enabledChannels = await db.select({ tvgId: channels.tvgId })
     .from(channels)
-    .where(and(eq(channels.playlistId, playlistId), eq(channels.enabled, true)))
+    .where(and(eq(channels.playlistId, playlistId), eq(channels.enabled, true), eq(channels.isDeleted, false)))
   const enabledIds = new Set(enabledChannels.map(c => c.tvgId).filter(Boolean))
 
   // Stream-filter the XML: keep <channel> and <programme> elements whose id/channel attr is in enabledIds

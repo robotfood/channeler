@@ -29,7 +29,8 @@ export async function getDashboardPlaylists() {
     db.select({
       playlistId: channels.playlistId,
       total: sql<number>`count(*)`,
-      enabled: sql<number>`sum(case when ${channels.enabled} then 1 else 0 end)`,
+      enabled: sql<number>`sum(case when ${channels.enabled} and not ${channels.isDeleted} then 1 else 0 end)`,
+      deleted: sql<number>`sum(case when ${channels.isDeleted} then 1 else 0 end)`,
     }).from(channels).groupBy(channels.playlistId),
     db.select({
       playlistId: groups.playlistId,
@@ -39,16 +40,21 @@ export async function getDashboardPlaylists() {
 
   const channelCountByPlaylist = new Map(channelCounts.map(row => [
     row.playlistId,
-    { total: Number(row.total) || 0, enabled: Number(row.enabled) || 0 },
+    {
+      total: Number(row.total) || 0,
+      enabled: Number(row.enabled) || 0,
+      deleted: Number(row.deleted) || 0,
+    },
   ]))
   const groupCountByPlaylist = new Map(groupCounts.map(row => [row.playlistId, Number(row.count) || 0]))
 
   return rows.map(p => {
-    const channelCount = channelCountByPlaylist.get(p.id) ?? { total: 0, enabled: 0 }
+    const channelCount = channelCountByPlaylist.get(p.id) ?? { total: 0, enabled: 0, deleted: 0 }
     return {
       ...p,
       channelTotal: channelCount.total,
       channelEnabled: channelCount.enabled,
+      channelDeleted: channelCount.deleted,
       groupCount: groupCountByPlaylist.get(p.id) ?? 0,
     }
   })

@@ -22,7 +22,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     .orderBy(asc(groups.sortOrder))
 
   const enabledChannels = await db.select().from(channels)
-    .where(and(eq(channels.playlistId, playlistId), eq(channels.enabled, true)))
+    .where(and(eq(channels.playlistId, playlistId), eq(channels.enabled, true), eq(channels.isDeleted, false)))
     .orderBy(asc(channels.sortOrder))
 
   const channelsByGroup = new Map<number, typeof enabledChannels>()

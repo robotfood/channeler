@@ -80,6 +80,7 @@ export default function PlaylistEditorClient({ initialData, playlistId }: {
   const [selectedGroupId, setSelectedGroupId] = useState<number | null>(initialData.groups[0]?.id ?? null)
   const [groupSearch, setGroupSearch] = useState('')
   const [channelSearch, setChannelSearch] = useState('')
+  const [showTrash, setShowTrash] = useState(false)
   const [refreshing, setRefreshing] = useState<'m3u' | 'epg' | null>(null)
   const [toast, setToast] = useState('')
   const [merging, setMerging] = useState(false)
@@ -199,7 +200,7 @@ export default function PlaylistEditorClient({ initialData, playlistId }: {
 
   const channelIndex = useMemo(() => {
     const byGroup = new Map<number, Channel[]>()
-    const statsByGroup = new Map<number, { total: number; enabled: number }>()
+    const statsByGroup = new Map<number, { total: number; enabled: number; deleted: number }>()
     let totalEnabled = 0
 
     for (const channel of data?.channels ?? []) {
@@ -210,11 +211,15 @@ export default function PlaylistEditorClient({ initialData, playlistId }: {
         byGroup.set(channel.groupId, [channel])
       }
 
-      const stats = statsByGroup.get(channel.groupId) ?? { total: 0, enabled: 0 }
-      stats.total++
-      if (channel.enabled) {
-        stats.enabled++
-        totalEnabled++
+      const stats = statsByGroup.get(channel.groupId) ?? { total: 0, enabled: 0, deleted: 0 }
+      if (channel.isDeleted) {
+        stats.deleted++
+      } else {
+        stats.total++
+        if (channel.enabled) {
+          stats.enabled++
+          totalEnabled++
+        }
       }
       statsByGroup.set(channel.groupId, stats)
     }
@@ -234,9 +239,12 @@ export default function PlaylistEditorClient({ initialData, playlistId }: {
   const filteredChannels = useMemo(
     () => {
       const groupChannels = selectedGroupId ? (channelIndex.byGroup.get(selectedGroupId) ?? []) : []
-      return groupChannels.filter(c => c.displayName.toLowerCase().includes(channelSearchTerm))
+      return groupChannels.filter(c =>
+        c.displayName.toLowerCase().includes(channelSearchTerm) &&
+        (showTrash ? c.isDeleted : !c.isDeleted)
+      )
     },
-    [channelIndex.byGroup, selectedGroupId, channelSearchTerm]
+    [channelIndex.byGroup, selectedGroupId, channelSearchTerm, showTrash]
   )
 
   const mergeTarget = groupsById.get(mergeIds[0])
@@ -312,7 +320,7 @@ export default function PlaylistEditorClient({ initialData, playlistId }: {
             <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
               <SortableContext items={filteredGroups.map(g => g.id)} strategy={verticalListSortingStrategy}>
                 {filteredGroups.map(g => {
-                  const stats = channelIndex.statsByGroup.get(g.id) ?? { total: 0, enabled: 0 }
+                  const stats = channelIndex.statsByGroup.get(g.id) ?? { total: 0, enabled: 0, deleted: 0 }
                   return (
                     <SortableGroup key={g.id} group={g}
                       selected={selectedGroupId === g.id}
@@ -337,18 +345,28 @@ export default function PlaylistEditorClient({ initialData, playlistId }: {
             <div className="flex items-center justify-between gap-2">
               <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
                 {selectedGroup?.displayName ?? 'Select a group'}
+                {showTrash && <span className="ml-2 text-xs font-normal text-red-500 uppercase tracking-wider">Trash</span>}
               </span>
-              {selectedGroupId && (
-                <div className="flex gap-2 text-xs">
-                  <button onClick={() => bulkToggleChannels(filteredChannels, true)} className="text-blue-600 dark:text-blue-400 hover:text-blue-500 dark:hover:text-blue-300">
-                    {channelSearch ? `Enable (${filteredChannels.length})` : 'Enable all'}
-                  </button>
-                  <span className="text-gray-300 dark:text-gray-700">·</span>
-                  <button onClick={() => bulkToggleChannels(filteredChannels, false)} className="text-blue-600 dark:text-blue-400 hover:text-blue-500 dark:hover:text-blue-300">
-                    {channelSearch ? `Disable (${filteredChannels.length})` : 'Disable all'}
-                  </button>
-                </div>
-              )}
+              <div className="flex gap-2 text-xs items-center">
+                {!showTrash && selectedGroupId && (
+                  <>
+                    <button onClick={() => bulkToggleChannels(filteredChannels, true)} className="text-blue-600 dark:text-blue-400 hover:text-blue-500 dark:hover:text-blue-300">
+                      {channelSearch ? `Enable (${filteredChannels.length})` : 'Enable all'}
+                    </button>
+                    <span className="text-gray-300 dark:text-gray-700">·</span>
+                    <button onClick={() => bulkToggleChannels(filteredChannels, false)} className="text-blue-600 dark:text-blue-400 hover:text-blue-500 dark:hover:text-blue-300">
+                      {channelSearch ? `Disable (${filteredChannels.length})` : 'Disable all'}
+                    </button>
+                    <span className="text-gray-300 dark:text-gray-700">·</span>
+                  </>
+                )}
+                <button
+                  onClick={() => setShowTrash(!showTrash)}
+                  className={`px-2 py-0.5 rounded transition-colors ${showTrash ? 'bg-red-100 dark:bg-red-900/40 text-red-600 dark:text-red-400' : 'text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800'}`}
+                >
+                  {showTrash ? 'Exit Trash' : `Trash (${selectedGroupId ? (channelIndex.statsByGroup.get(selectedGroupId)?.deleted ?? 0) : 0})`}
+                </button>
+              </div>
             </div>
             <input value={channelSearch} onChange={e => setChannelSearch(e.target.value)}
               placeholder="Search channels..." className={inputCls} />
@@ -358,10 +376,13 @@ export default function PlaylistEditorClient({ initialData, playlistId }: {
               <ChannelRow key={ch.id} channel={ch}
                 onToggle={() => patchChannel(ch.id, { enabled: !ch.enabled })}
                 onRename={name => patchChannel(ch.id, { displayName: name })}
+                onDelete={() => patchChannel(ch.id, { isDeleted: !ch.isDeleted })}
               />
             ))}
             {filteredChannels.length === 0 && (
-              <p className="text-gray-400 dark:text-gray-600 text-sm text-center py-8">No channels</p>
+              <p className="text-gray-400 dark:text-gray-600 text-sm text-center py-8">
+                {showTrash ? 'Trash is empty' : 'No channels'}
+              </p>
             )}
           </div>
         </div>
@@ -376,18 +397,21 @@ export default function PlaylistEditorClient({ initialData, playlistId }: {
   )
 }
 
-function ChannelRow({ channel, onToggle, onRename }: {
+function ChannelRow({ channel, onToggle, onRename, onDelete }: {
   channel: Channel
   onToggle: () => void
   onRename: (name: string) => void
+  onDelete: () => void
 }) {
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(channel.displayName)
 
   return (
     <div className="flex min-h-9 items-center gap-3 px-2 py-1.5 rounded hover:bg-gray-50 dark:hover:bg-gray-800 group">
-      <input type="checkbox" checked={channel.enabled} onChange={onToggle}
-        className="rounded border-gray-300 dark:border-gray-600 accent-blue-500 shrink-0" />
+      {!channel.isDeleted && (
+        <input type="checkbox" checked={channel.enabled} onChange={onToggle}
+          className="rounded border-gray-300 dark:border-gray-600 accent-blue-500 shrink-0" />
+      )}
       {channel.tvgLogo && (
         // eslint-disable-next-line @next/next/no-img-element
         <img
@@ -407,10 +431,25 @@ function ChannelRow({ channel, onToggle, onRename }: {
             onKeyDown={e => { if (e.key === 'Enter') { setEditing(false); onRename(draft) } if (e.key === 'Escape') { setEditing(false); setDraft(channel.displayName) } }}
             className="flex-1 bg-gray-100 dark:bg-gray-700 rounded px-2 py-0.5 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500 min-w-0" />
         : <span onDoubleClick={() => setEditing(true)}
-            className="flex-1 text-sm truncate" title="Double-click to rename">
+            className={`flex-1 text-sm truncate ${channel.isDeleted ? 'text-gray-400 italic' : ''}`} title="Double-click to rename">
             {channel.displayName}
           </span>
       }
+      <button
+        onClick={onDelete}
+        title={channel.isDeleted ? 'Restore channel' : 'Delete channel'}
+        className="opacity-0 group-hover:opacity-100 p-1 rounded hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-400 hover:text-red-500 transition-all"
+      >
+        {channel.isDeleted ? (
+          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+          </svg>
+        ) : (
+          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+          </svg>
+        )}
+      </button>
     </div>
   )
 }
