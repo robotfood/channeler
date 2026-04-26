@@ -94,7 +94,10 @@ export default function DashboardClient({ initialPlaylists, host }: {
                 <div className="mt-3 space-y-1">
                   <UrlRow label="M3U" url={`http://${host}/api/output/${p.slug}/m3u`} />
                   {p.epgUrl || p.epgLastFetchedAt || p.epgSourceType === 'xtream'
-                    ? <UrlRow label="EPG" url={`http://${host}/api/output/${p.slug}/xml`} />
+                    ? <UrlRow
+                        label="EPG"
+                        url={p.proxyEpg || p.epgSourceType === 'upload' ? `http://${host}/api/output/${p.slug}/xml` : p.epgUrl!}
+                      />
                     : <p className="text-xs text-gray-400 dark:text-gray-600 mt-1">No EPG configured</p>
                   }
                 </div>

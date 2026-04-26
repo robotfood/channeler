@@ -19,6 +19,7 @@ function toPlaylistSettings(data: PlaylistData) {
     slug: data.slug,
     autoRefresh: data.autoRefresh,
     proxyStreams: data.proxyStreams,
+    proxyEpg: data.proxyEpg,
     createdAt: data.createdAt,
   }
 }

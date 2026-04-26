@@ -32,6 +32,7 @@ export async function POST(req: NextRequest) {
     const xtreamPassword = formData.get('xtreamPassword') as string | null
     const xtreamOutput = (formData.get('xtreamOutput') as string | null) || 'ts'
     const useXtreamEpg = (formData.get('useXtreamEpg') as string | null) === 'true'
+    const proxyEpg = (formData.get('proxyEpg') as string | null) !== 'false'
 
     if (!name) return NextResponse.json({ error: 'name required' }, { status: 400 })
     if (sourceKind === 'xtream') {
@@ -67,6 +68,7 @@ export async function POST(req: NextRequest) {
       epgSourceType: sourceKind === 'xtream'
         ? useXtreamEpg ? 'xtream' : null
         : epgFile ? 'upload' : epgUrl ? 'url' : null,
+      proxyEpg,
     }).returning()
     createdPlaylistId = playlist.id
 

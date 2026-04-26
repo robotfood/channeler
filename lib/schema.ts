@@ -17,6 +17,7 @@ export const playlists = sqliteTable('playlists', {
   slug: text('slug').notNull().default(''),
   autoRefresh: integer('auto_refresh', { mode: 'boolean' }).notNull().default(true),
   proxyStreams: integer('proxy_streams', { mode: 'boolean' }).notNull().default(false),
+  proxyEpg: integer('proxy_epg', { mode: 'boolean' }).notNull().default(true),
   createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),
 })
 

@@ -18,6 +18,8 @@ export async function getDashboardPlaylists() {
       epgSourceType: playlists.epgSourceType,
       epgLastFetchedAt: playlists.epgLastFetchedAt,
       autoRefresh: playlists.autoRefresh,
+      proxyStreams: playlists.proxyStreams,
+      proxyEpg: playlists.proxyEpg,
       createdAt: playlists.createdAt,
     })
     .from(playlists)

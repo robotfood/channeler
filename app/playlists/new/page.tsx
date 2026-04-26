@@ -43,6 +43,7 @@ export default function NewPlaylist() {
         : (m3uUrl ? new URL(m3uUrl).hostname : 'My Playlist')
       fd.append('name', name || fallbackName)
       fd.append('sourceKind', sourceKind)
+      fd.append('proxyEpg', 'true')
       if (sourceKind === 'xtream') {
         fd.append('xtreamServerUrl', xtreamServerUrl)
         fd.append('xtreamUsername', xtreamUsername)

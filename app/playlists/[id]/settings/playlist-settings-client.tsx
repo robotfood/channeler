@@ -25,6 +25,7 @@ export default function PlaylistSettingsClient({ initialData, playlistId }: {
   const [epgUrl, setEpgUrl] = useState(initialData.epgUrl ?? '')
   const [autoRefresh, setAutoRefresh] = useState(initialData.autoRefresh)
   const [proxyStreams, setProxyStreams] = useState(initialData.proxyStreams)
+  const [proxyEpg, setProxyEpg] = useState(initialData.proxyEpg)
   const [saving, setSaving] = useState(false)
   const [toast, setToast] = useState('')
 
@@ -41,6 +42,7 @@ export default function PlaylistSettingsClient({ initialData, playlistId }: {
         epgUrl: data.epgSourceType === 'xtream' ? null : epgUrl || null,
         autoRefresh,
         proxyStreams,
+        proxyEpg,
         xtreamServerUrl: data.m3uSourceType === 'xtream' ? xtreamServerUrl || null : null,
         xtreamUsername: data.m3uSourceType === 'xtream' ? xtreamUsername || null : null,
         xtreamPassword: data.m3uSourceType === 'xtream' ? xtreamPassword || null : null,
@@ -140,6 +142,12 @@ export default function PlaylistSettingsClient({ initialData, playlistId }: {
           <input type="checkbox" id="proxyStreams" checked={proxyStreams} onChange={e => setProxyStreams(e.target.checked)}
             className="rounded border-gray-300 dark:border-gray-600 accent-blue-500" />
           <label htmlFor="proxyStreams" className="text-sm text-gray-700 dark:text-gray-300">Proxy streams through this server</label>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <input type="checkbox" id="proxyEpg" checked={proxyEpg} onChange={e => setProxyEpg(e.target.checked)}
+            className="rounded border-gray-300 dark:border-gray-600 accent-blue-500" />
+          <label htmlFor="proxyEpg" className="text-sm text-gray-700 dark:text-gray-300">Proxy EPG through this server (enables filtering)</label>
         </div>
 
         <button onClick={save} disabled={saving}

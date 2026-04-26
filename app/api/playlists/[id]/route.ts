@@ -32,6 +32,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   if ('epgUrl' in body) updates.epgUrl = body.epgUrl
   if ('autoRefresh' in body) updates.autoRefresh = body.autoRefresh
   if ('proxyStreams' in body) updates.proxyStreams = body.proxyStreams
+  if ('proxyEpg' in body) updates.proxyEpg = body.proxyEpg
   if ('epgSourceType' in body) updates.epgSourceType = body.epgSourceType
   if ('xtreamServerUrl' in body) updates.xtreamServerUrl = body.xtreamServerUrl
   if ('xtreamUsername' in body) updates.xtreamUsername = body.xtreamUsername

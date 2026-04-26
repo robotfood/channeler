@@ -33,7 +33,13 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
 
   const baseUrl = getPublicBaseUrl(req)
 
-  const lines: string[] = ['#EXTM3U']
+  const epgUrl = playlist.epgUrl || playlist.epgSourceType === 'xtream' || playlist.epgLastFetchedAt
+    ? (playlist.proxyEpg || playlist.epgSourceType === 'upload'
+        ? `${baseUrl}/api/output/${playlist.slug}/xml`
+        : playlist.epgUrl)
+    : null
+
+  const lines: string[] = [epgUrl ? `#EXTM3U x-tvg-url="${epgUrl}"` : '#EXTM3U']
   for (const g of enabledGroups) {
     const chs = channelsByGroup.get(g.id) ?? []
     for (const ch of chs) {
