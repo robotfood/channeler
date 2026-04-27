@@ -1,5 +1,6 @@
 'use client'
 
+/* eslint-disable @typescript-eslint/no-explicit-any */
 import { useEffect, useRef, useState } from 'react'
 import Hls from 'hls.js'
 
@@ -22,7 +23,62 @@ export default function ChannelPlayer({ url, title, channelId, onClose }: Props)
   const [error, setError] = useState<string | null>(null)
   const [epg, setEpg] = useState<EpgData | null>(null)
   const [loadingEpg, setLoadingEpg] = useState(false)
+  const [isCasting, setIsCasting] = useState(false)
   const hlsRef = useRef<Hls | null>(null)
+
+  useEffect(() => {
+    // Listen for Cast state changes
+    if (typeof window !== 'undefined') {
+      const win = window as any
+      if (win.cast?.framework) {
+        const cast = win.cast
+        const context = cast.framework.CastContext.getInstance()
+        const handler = (event: { value: string }) => {
+          setIsCasting(event.value === cast.framework.CastState.CONNECTED)
+        }
+        context.addEventListener(cast.framework.CastContextEventType.CAST_STATE_CHANGED, handler)
+        
+        // Defer to avoid cascading render warning
+        const isConnected = context.getCastState() === cast.framework.CastState.CONNECTED
+        if (isConnected) {
+          setTimeout(() => setIsCasting(true), 0)
+        }
+
+        return () => context.removeEventListener(cast.framework.CastContextEventType.CAST_STATE_CHANGED, handler)
+      }
+    }
+  }, [])
+
+  useEffect(() => {
+    // If cast is available and connected, load media
+    if (isCasting && typeof window !== 'undefined') {
+      const win = window as any
+      if (win.cast?.framework && win.chrome?.cast?.media) {
+        const cast = win.cast
+        const chrome = win.chrome
+        const context = cast.framework.CastContext.getInstance()
+        const session = context.getCurrentSession()
+        
+        if (session) {
+          const absoluteUrl = new URL(url, win.location.origin).toString()
+          const mediaInfo = new chrome.cast.media.MediaInfo(absoluteUrl, 'application/x-mpegurl')
+          
+          const metadata = new chrome.cast.media.GenericMediaMetadata()
+          metadata.title = title
+          if (epg) {
+            metadata.subtitle = epg.title
+          }
+          mediaInfo.metadata = metadata
+
+          const request = new chrome.cast.media.LoadRequest(mediaInfo)
+          session.loadMedia(request).catch((err: unknown) => console.error('Cast load error', err))
+          
+          // Pause local video when casting
+          if (videoRef.current) videoRef.current.pause()
+        }
+      }
+    }
+  }, [url, title, epg, isCasting])
 
   useEffect(() => {
     async function fetchEpg() {
@@ -96,14 +152,35 @@ export default function ChannelPlayer({ url, title, channelId, onClose }: Props)
     <div className="flex flex-col h-full bg-black text-white overflow-hidden rounded-lg shadow-xl border border-gray-800">
       <div className="flex items-center justify-between p-3 bg-gray-900 border-b border-gray-800">
         <h2 className="text-sm font-medium truncate flex-1 pr-4">{title}</h2>
-        <button onClick={onClose} className="text-gray-400 hover:text-white transition-colors">
-          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-          </svg>
-        </button>
+        <div className="flex items-center gap-3">
+          <style jsx global>{`
+            google-cast-launcher {
+              --connected-color: #3b82f6;
+              --disconnected-color: #9ca3af;
+              width: 20px;
+              height: 20px;
+              cursor: pointer;
+            }
+          `}</style>
+          {/* @ts-expect-error google-cast-launcher is a custom element from Cast SDK */}
+          <google-cast-launcher />
+          <button onClick={onClose} className="text-gray-400 hover:text-white transition-colors">
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
       </div>
       <div className="relative flex-1 flex items-center justify-center bg-black">
-        {error ? (
+        {isCasting ? (
+          <div className="text-center p-6">
+            <svg className="w-16 h-16 mx-auto mb-4 text-blue-500 animate-pulse" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+            </svg>
+            <p className="text-lg font-medium">Casting to device...</p>
+            <p className="text-sm text-gray-400 mt-1 italic">Playback continues on your external screen</p>
+          </div>
+        ) : error ? (
           <div className="p-6 text-center text-red-400">
             <svg className="w-12 h-12 mx-auto mb-4 opacity-50" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
