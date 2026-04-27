@@ -7,11 +7,30 @@ import type { PlaylistSettingsData } from '@/lib/app-data'
 
 type PlaylistSettings = PlaylistSettingsData
 
+interface RefreshLogEntry {
+  id: number
+  playlistId: number | null
+  playlistName: string | null
+  type: string
+  triggeredBy: string
+  status: string
+  detail: string | null
+  createdAt: string
+}
+
 const inputCls = 'w-full bg-gray-50 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded px-3 py-2 text-sm focus:outline-none focus:border-blue-500'
 const labelCls = 'block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1'
 
+const INTERVALS = [
+  { label: '1 hour', value: '1' },
+  { label: '6 hours', value: '6' },
+  { label: '12 hours', value: '12' },
+  { label: '24 hours', value: '24' },
+  { label: '7 days', value: '168' },
+]
+
 export default function PlaylistSettingsClient({ initialData, playlistId }: {
-  initialData: PlaylistSettings
+  initialData: PlaylistSettings & { log: RefreshLogEntry[] }
   playlistId: string
 }) {
   const router = useRouter()
@@ -24,6 +43,8 @@ export default function PlaylistSettingsClient({ initialData, playlistId }: {
   const [xtreamOutput, setXtreamOutput] = useState(initialData.xtreamOutput ?? 'ts')
   const [epgUrl, setEpgUrl] = useState(initialData.epgUrl ?? '')
   const [autoRefresh, setAutoRefresh] = useState(initialData.autoRefresh)
+  const [m3uRefreshInterval, setM3uRefreshInterval] = useState(initialData.m3uRefreshInterval ?? 24)
+  const [epgRefreshInterval, setEpgRefreshInterval] = useState(initialData.epgRefreshInterval ?? 24)
   const [proxyStreams, setProxyStreams] = useState(initialData.proxyStreams)
   const [proxyEpg, setProxyEpg] = useState(initialData.proxyEpg)
   const [saving, setSaving] = useState(false)
@@ -41,6 +62,8 @@ export default function PlaylistSettingsClient({ initialData, playlistId }: {
         m3uUrl: data.m3uSourceType === 'xtream' ? null : m3uUrl || null,
         epgUrl: data.epgSourceType === 'xtream' ? null : epgUrl || null,
         autoRefresh,
+        m3uRefreshInterval,
+        epgRefreshInterval,
         proxyStreams,
         proxyEpg,
         xtreamServerUrl: data.m3uSourceType === 'xtream' ? xtreamServerUrl || null : null,
@@ -132,10 +155,31 @@ export default function PlaylistSettingsClient({ initialData, playlistId }: {
             className="text-sm text-gray-600 dark:text-gray-300" />
         </div>
 
-        <div className="flex items-center gap-2">
-          <input type="checkbox" id="autoRefresh" checked={autoRefresh} onChange={e => setAutoRefresh(e.target.checked)}
-            className="rounded border-gray-300 dark:border-gray-600 accent-blue-500" />
-          <label htmlFor="autoRefresh" className="text-sm text-gray-700 dark:text-gray-300">Include in global auto-refresh</label>
+        <div className="space-y-4 pt-2 border-t border-gray-100 dark:border-gray-800">
+          <div className="flex items-center gap-2">
+            <input type="checkbox" id="autoRefresh" checked={autoRefresh} onChange={e => setAutoRefresh(e.target.checked)}
+              className="rounded border-gray-300 dark:border-gray-600 accent-blue-500" />
+            <label htmlFor="autoRefresh" className="text-sm font-medium text-gray-700 dark:text-gray-300">Enable auto-refresh for this playlist</label>
+          </div>
+
+          {autoRefresh && (
+            <div className="grid grid-cols-2 gap-4 pl-6">
+              <div>
+                <label className="block text-xs text-gray-500 dark:text-gray-500 mb-1">M3U Interval</label>
+                <select value={m3uRefreshInterval} onChange={e => setM3uRefreshInterval(parseInt(e.target.value))}
+                  className="w-full bg-gray-50 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded px-2 py-1 text-sm focus:outline-none focus:border-blue-500">
+                  {INTERVALS.map(i => <option key={i.value} value={i.value}>{i.label}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs text-gray-500 dark:text-gray-500 mb-1">EPG Interval</label>
+                <select value={epgRefreshInterval} onChange={e => setEpgRefreshInterval(parseInt(e.target.value))}
+                  className="w-full bg-gray-50 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded px-2 py-1 text-sm focus:outline-none focus:border-blue-500">
+                  {INTERVALS.map(i => <option key={i.value} value={i.value}>{i.label}</option>)}
+                </select>
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="flex items-center gap-2">
@@ -155,6 +199,40 @@ export default function PlaylistSettingsClient({ initialData, playlistId }: {
           {saving ? 'Saving...' : 'Save Changes'}
         </button>
       </div>
+
+      {initialData.log.length > 0 && (
+        <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-lg p-5">
+          <h2 className="text-base font-semibold mb-4">Recent Activity</h2>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-xs text-gray-400 dark:text-gray-500 border-b border-gray-200 dark:border-gray-800">
+                  <th className="pb-2 pr-4">Time</th>
+                  <th className="pb-2 pr-4">Type</th>
+                  <th className="pb-2 pr-4">Status</th>
+                  <th className="pb-2">Detail</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
+                {initialData.log.map((entry: RefreshLogEntry) => (
+                  <tr key={entry.id} className="text-gray-700 dark:text-gray-300">
+                    <td className="py-2 pr-4 text-xs text-gray-400 dark:text-gray-500 whitespace-nowrap" suppressHydrationWarning>
+                      {new Date(entry.createdAt).toLocaleString()}
+                    </td>
+                    <td className="py-2 pr-4 uppercase text-xs font-medium">{entry.type}</td>
+                    <td className="py-2 pr-4">
+                      <span className={`text-[10px] uppercase font-bold px-1.5 py-0.5 rounded ${entry.status === 'success' ? 'bg-green-100 dark:bg-green-900/50 text-green-700 dark:text-green-400' : 'bg-red-100 dark:bg-red-900/50 text-red-700 dark:text-red-400'}`}>
+                        {entry.status}
+                      </span>
+                    </td>
+                    <td className="py-2 text-xs text-gray-400 dark:text-gray-500 truncate max-w-48" title={entry.detail ?? ''}>{entry.detail ?? '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       <div className="bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900/50 rounded-lg p-5">
         <h2 className="text-sm font-medium text-red-600 dark:text-red-400 mb-2">Danger Zone</h2>

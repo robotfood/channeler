@@ -18,9 +18,12 @@ function toPlaylistSettings(data: PlaylistData) {
     epgLastFetchedAt: data.epgLastFetchedAt,
     slug: data.slug,
     autoRefresh: data.autoRefresh,
+    m3uRefreshInterval: data.m3uRefreshInterval,
+    epgRefreshInterval: data.epgRefreshInterval,
     proxyStreams: data.proxyStreams,
     proxyEpg: data.proxyEpg,
     createdAt: data.createdAt,
+    log: data.log,
   }
 }
 

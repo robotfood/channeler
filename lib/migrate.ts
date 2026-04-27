@@ -21,6 +21,8 @@ export function runMigrations() {
       epg_last_fetched_at TEXT,
       slug TEXT NOT NULL DEFAULT '',
       auto_refresh INTEGER NOT NULL DEFAULT 1,
+      m3u_refresh_interval INTEGER NOT NULL DEFAULT 24,
+      epg_refresh_interval INTEGER NOT NULL DEFAULT 24,
       proxy_streams INTEGER NOT NULL DEFAULT 0,
       proxy_epg INTEGER NOT NULL DEFAULT 1,
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
@@ -84,6 +86,8 @@ export function runMigrations() {
   try { sqlite.exec(`ALTER TABLE playlists ADD COLUMN proxy_streams INTEGER NOT NULL DEFAULT 0`) } catch {}
   try { sqlite.exec(`ALTER TABLE playlists ADD COLUMN proxy_epg INTEGER NOT NULL DEFAULT 1`) } catch {}
   try { sqlite.exec(`ALTER TABLE playlists ADD COLUMN slug TEXT NOT NULL DEFAULT ''`) } catch {}
+  try { sqlite.exec(`ALTER TABLE playlists ADD COLUMN m3u_refresh_interval INTEGER NOT NULL DEFAULT 24`) } catch {}
+  try { sqlite.exec(`ALTER TABLE playlists ADD COLUMN epg_refresh_interval INTEGER NOT NULL DEFAULT 24`) } catch {}
   try { sqlite.exec(`ALTER TABLE playlists ADD COLUMN xtream_server_url TEXT`) } catch {}
   try { sqlite.exec(`ALTER TABLE playlists ADD COLUMN xtream_username TEXT`) } catch {}
   try { sqlite.exec(`ALTER TABLE playlists ADD COLUMN xtream_password TEXT`) } catch {}

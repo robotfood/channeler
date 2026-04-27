@@ -16,6 +16,8 @@ export const playlists = sqliteTable('playlists', {
   epgLastFetchedAt: text('epg_last_fetched_at'),
   slug: text('slug').notNull().default(''),
   autoRefresh: integer('auto_refresh', { mode: 'boolean' }).notNull().default(true),
+  m3uRefreshInterval: integer('m3u_refresh_interval').notNull().default(24),
+  epgRefreshInterval: integer('epg_refresh_interval').notNull().default(24),
   proxyStreams: integer('proxy_streams', { mode: 'boolean' }).notNull().default(false),
   proxyEpg: integer('proxy_epg', { mode: 'boolean' }).notNull().default(true),
   createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),

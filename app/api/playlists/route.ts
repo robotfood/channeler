@@ -34,6 +34,8 @@ export async function POST(req: NextRequest) {
     const useXtreamEpg = (formData.get('useXtreamEpg') as string | null) === 'true'
     const proxyStreams = (formData.get('proxyStreams') as string | null) === 'true'
     const proxyEpg = (formData.get('proxyEpg') as string | null) !== 'false'
+    const m3uRefreshInterval = parseInt(formData.get('m3uRefreshInterval') as string || '24')
+    const epgRefreshInterval = parseInt(formData.get('epgRefreshInterval') as string || '24')
 
     if (!name) return NextResponse.json({ error: 'name required' }, { status: 400 })
     if (sourceKind === 'xtream') {
@@ -71,6 +73,8 @@ export async function POST(req: NextRequest) {
         : epgFile ? 'upload' : epgUrl ? 'url' : null,
       proxyStreams,
       proxyEpg,
+      m3uRefreshInterval,
+      epgRefreshInterval,
     }).returning()
     createdPlaylistId = playlist.id
 

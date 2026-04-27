@@ -1,6 +1,6 @@
 import { and, asc, desc, eq, sql } from 'drizzle-orm'
 import { db } from '@/lib/db'
-import { channels, groups, playlists, refreshLog, settings } from '@/lib/schema'
+import { channels, groups, playlists, refreshLog } from '@/lib/schema'
 
 export async function getDashboardPlaylists() {
   const rows = await db
@@ -64,16 +64,31 @@ export async function getPlaylistData(playlistId: number) {
   const [playlist] = await db.select().from(playlists).where(eq(playlists.id, playlistId))
   if (!playlist) return null
 
-  const [playlistGroups, playlistChannels] = await Promise.all([
+  const [playlistGroups, playlistChannels, playlistLog] = await Promise.all([
     db.select().from(groups)
       .where(eq(groups.playlistId, playlistId))
       .orderBy(asc(groups.sortOrder)),
     db.select().from(channels)
       .where(eq(channels.playlistId, playlistId))
       .orderBy(asc(channels.sortOrder)),
+    db.select({
+      id: refreshLog.id,
+      playlistId: refreshLog.playlistId,
+      playlistName: playlists.name,
+      type: refreshLog.type,
+      triggeredBy: refreshLog.triggeredBy,
+      status: refreshLog.status,
+      detail: refreshLog.detail,
+      createdAt: refreshLog.createdAt,
+    })
+      .from(refreshLog)
+      .leftJoin(playlists, eq(refreshLog.playlistId, playlists.id))
+      .where(eq(refreshLog.playlistId, playlistId))
+      .orderBy(desc(refreshLog.createdAt))
+      .limit(20),
   ])
 
-  return { ...playlist, groups: playlistGroups, channels: playlistChannels }
+  return { ...playlist, groups: playlistGroups, channels: playlistChannels, log: playlistLog }
 }
 
 export async function getFavoriteChannels() {
@@ -94,27 +109,6 @@ export async function getFavoriteChannels() {
     ))
 }
 
-export async function getSettingsData() {
-  const rows = await db.select().from(settings)
-  const log = await db.select({
-    id: refreshLog.id,
-    playlistId: refreshLog.playlistId,
-    playlistName: playlists.name,
-    type: refreshLog.type,
-    triggeredBy: refreshLog.triggeredBy,
-    status: refreshLog.status,
-    detail: refreshLog.detail,
-    createdAt: refreshLog.createdAt,
-  })
-    .from(refreshLog)
-    .leftJoin(playlists, eq(refreshLog.playlistId, playlists.id))
-    .orderBy(desc(refreshLog.createdAt))
-    .limit(50)
-
-  return { settings: Object.fromEntries(rows.map(r => [r.key, r.value])), log }
-}
-
 export type DashboardPlaylist = Awaited<ReturnType<typeof getDashboardPlaylists>>[number]
 export type PlaylistData = NonNullable<Awaited<ReturnType<typeof getPlaylistData>>>
 export type PlaylistSettingsData = Omit<PlaylistData, 'groups' | 'channels'>
-export type SettingsData = Awaited<ReturnType<typeof getSettingsData>>

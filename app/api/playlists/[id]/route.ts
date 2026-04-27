@@ -31,6 +31,8 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   if ('m3uSourceType' in body) updates.m3uSourceType = body.m3uSourceType
   if ('epgUrl' in body) updates.epgUrl = body.epgUrl
   if ('autoRefresh' in body) updates.autoRefresh = body.autoRefresh
+  if ('m3uRefreshInterval' in body) updates.m3uRefreshInterval = body.m3uRefreshInterval
+  if ('epgRefreshInterval' in body) updates.epgRefreshInterval = body.epgRefreshInterval
   if ('proxyStreams' in body) updates.proxyStreams = body.proxyStreams
   if ('proxyEpg' in body) updates.proxyEpg = body.proxyEpg
   if ('epgSourceType' in body) updates.epgSourceType = body.epgSourceType

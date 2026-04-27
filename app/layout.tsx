@@ -25,7 +25,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <nav className="bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800 px-6 py-3 flex items-center gap-6">
           <Link href="/" className="text-gray-900 dark:text-white font-semibold text-lg tracking-tight">Channeler</Link>
           <Link href="/" className="text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white text-sm transition-colors">Playlists</Link>
-          <Link href="/settings" className="text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white text-sm transition-colors">Settings</Link>
           <div className="ml-auto">
             <ThemeToggle />
           </div>
