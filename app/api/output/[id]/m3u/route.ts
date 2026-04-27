@@ -5,6 +5,7 @@ import { db } from '@/lib/db'
 import { playlists, groups, channels } from '@/lib/schema'
 import { eq, asc, and } from 'drizzle-orm'
 import { getPublicBaseUrl } from '@/lib/public-base-url'
+import { channelPlaybackUrl } from '@/lib/stream-url'
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
@@ -45,7 +46,11 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     for (const ch of chs) {
       const logo = ch.tvgLogo ? ` tvg-logo="${ch.tvgLogo}"` : ''
       const tvgId = ch.tvgId ? ` tvg-id="${ch.tvgId}"` : ''
-      const streamUrl = playlist.proxyStreams ? `${baseUrl}/api/stream/${ch.id}` : ch.streamUrl
+      const streamUrl = channelPlaybackUrl(ch.id, ch.streamUrl, {
+        baseUrl,
+        playbackProfile: playlist.playbackProfile,
+        proxyStreams: playlist.proxyStreams,
+      })
       lines.push(`#EXTINF:-1${tvgId} tvg-name="${ch.displayName}"${logo} group-title="${g.displayName}",${ch.displayName}`)
       lines.push(streamUrl)
     }

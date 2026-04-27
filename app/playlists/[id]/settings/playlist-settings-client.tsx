@@ -29,6 +29,22 @@ const INTERVALS = [
   { label: '7 days', value: '168' },
 ]
 
+const PLAYBACK_PROFILES = [
+  { value: 'direct', label: 'Direct source' },
+  { value: 'proxy', label: 'Proxy passthrough' },
+  { value: 'stable_hls', label: 'Stable HLS remux' },
+  { value: 'transcode_720p', label: 'Transcode 720p' },
+  { value: 'transcode_1080p', label: 'Transcode 1080p' },
+  { value: 'qsv_720p', label: 'QSV 720p' },
+  { value: 'qsv_1080p', label: 'QSV 1080p' },
+  { value: 'enhanced_1080p', label: 'Enhanced 1080p' },
+  { value: 'clean_1080p', label: 'Clean 1080p' },
+  { value: 'sharp_1080p', label: 'Sharp 1080p' },
+  { value: 'smooth_720p60', label: 'Smooth 720p60' },
+  { value: 'smooth_1080p60', label: 'Smooth 1080p60' },
+  { value: 'sports_720p60', label: 'Sports 720p60' },
+]
+
 export default function PlaylistSettingsClient({ initialData, playlistId }: {
   initialData: PlaylistSettings & { log: RefreshLogEntry[] }
   playlistId: string
@@ -46,7 +62,9 @@ export default function PlaylistSettingsClient({ initialData, playlistId }: {
   const [m3uRefreshInterval, setM3uRefreshInterval] = useState(initialData.m3uRefreshInterval ?? 24)
   const [epgRefreshInterval, setEpgRefreshInterval] = useState(initialData.epgRefreshInterval ?? 24)
   const [bufferSize, setBufferSize] = useState(initialData.bufferSize ?? 'medium')
-  const [proxyStreams, setProxyStreams] = useState(initialData.proxyStreams)
+  const [playbackProfile, setPlaybackProfile] = useState(
+    initialData.playbackProfile === 'direct' && initialData.proxyStreams ? 'proxy' : initialData.playbackProfile ?? 'direct'
+  )
   const [proxyEpg, setProxyEpg] = useState(initialData.proxyEpg)
   const [saving, setSaving] = useState(false)
   const [toast, setToast] = useState('')
@@ -66,7 +84,8 @@ export default function PlaylistSettingsClient({ initialData, playlistId }: {
         m3uRefreshInterval,
         epgRefreshInterval,
         bufferSize,
-        proxyStreams,
+        playbackProfile,
+        proxyStreams: playbackProfile !== 'direct',
         proxyEpg,
         xtreamServerUrl: data.m3uSourceType === 'xtream' ? xtreamServerUrl || null : null,
         xtreamUsername: data.m3uSourceType === 'xtream' ? xtreamUsername || null : null,
@@ -184,10 +203,15 @@ export default function PlaylistSettingsClient({ initialData, playlistId }: {
           )}
         </div>
 
-        <div className="flex items-center gap-2">
-          <input type="checkbox" id="proxyStreams" checked={proxyStreams} onChange={e => setProxyStreams(e.target.checked)}
-            className="rounded border-gray-300 dark:border-gray-600 accent-blue-500" />
-          <label htmlFor="proxyStreams" className="text-sm text-gray-700 dark:text-gray-300">Proxy streams through this server</label>
+        <div className="flex flex-col gap-1">
+          <label htmlFor="playbackProfile" className="text-xs text-gray-500 dark:text-gray-400">Server Playback Profile</label>
+          <select id="playbackProfile" value={playbackProfile} onChange={e => setPlaybackProfile(e.target.value)}
+            className="w-full max-w-[240px] bg-gray-50 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded px-2 py-1 text-sm focus:outline-none focus:border-blue-500">
+            {PLAYBACK_PROFILES.map(profile => (
+              <option key={profile.value} value={profile.value}>{profile.label}</option>
+            ))}
+          </select>
+          <p className="text-[10px] text-gray-400 dark:text-gray-500">All modes except Direct route streams through this server. Transcode profiles require FFmpeg.</p>
         </div>
 
         <div className="flex flex-col gap-1 pl-6">

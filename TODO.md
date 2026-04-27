@@ -20,6 +20,12 @@ Set up a GitHub Actions workflow that triggers on push to `main`:
 
 ## Up Next
 
-- [ ] Add per-playlist buffer settings (small, medium, large, xl)
-- [ ] Add auto-reconnect support in the video player for dropped streams
-- [ ] Implement connection multiplexing/sharing to avoid hitting IPTV max connection limits
+- [x] Add per-playlist buffer settings (small, medium, large, xl)
+- [x] Add auto-reconnect support in the video player for dropped streams
+- [x] Implement connection multiplexing/sharing to avoid hitting IPTV max connection limits
+- [x] Add server playback profiles for stable HLS and FFmpeg transcoding
+- [x] Add optional 60fps motion interpolation playback profiles
+- [x] Add clean/sharp/sports non-AI enhancement playback profiles
+- [x] Add Intel QSV H.264 playback profiles
+- [ ] Add hardware-accelerated VAAPI transcode mode and host capability checks
+- [ ] Add transcode session dashboard with current process/client health

@@ -11,6 +11,7 @@ import {
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import ChannelPlayer from '@/components/channel-player'
+import { channelPlaybackUrl } from '@/lib/stream-url'
 
 type Group = PlaylistData['groups'][number]
 type Channel = PlaylistData['channels'][number]
@@ -408,7 +409,10 @@ export default function PlaylistEditorClient({ initialData, playlistId }: {
               title={playingChannel.displayName}
               channelId={playingChannel.id}
               bufferSize={data.bufferSize}
-              url={data.proxyStreams ? `/api/stream/${playingChannel.id}` : playingChannel.streamUrl}
+              url={channelPlaybackUrl(playingChannel.id, playingChannel.streamUrl, {
+                playbackProfile: data.playbackProfile,
+                proxyStreams: data.proxyStreams,
+              })}
               onClose={() => setPlayingChannel(null)}
             />
           </div>

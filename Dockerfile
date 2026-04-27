@@ -1,5 +1,4 @@
-FROM node:24.15.0-alpine AS base
-RUN apk add --no-cache libc6-compat
+FROM node:24.15.0-bookworm-slim AS base
 WORKDIR /app
 
 FROM base AS deps
@@ -13,6 +12,17 @@ COPY . .
 RUN npm run build
 
 FROM base AS runner
+RUN sed -i 's/Components: main/Components: main contrib non-free non-free-firmware/' /etc/apt/sources.list.d/debian.sources \
+  && apt-get update && apt-get install -y --no-install-recommends \
+    ffmpeg \
+    vainfo \
+  && for package in intel-media-va-driver i965-va-driver libvpl2 libmfx1; do \
+      candidate="$(apt-cache policy "$package" | awk '/Candidate:/ {print $2}')"; \
+      if [ -n "$candidate" ] && [ "$candidate" != "(none)" ]; then \
+        apt-get install -y --no-install-recommends "$package"; \
+      fi; \
+    done \
+  && rm -rf /var/lib/apt/lists/*
 ARG VERSION=dev
 LABEL org.opencontainers.image.version="${VERSION}"
 ENV NODE_ENV=production

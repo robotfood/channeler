@@ -4,6 +4,7 @@ import { useState } from 'react'
 import Link from 'next/link'
 import type { DashboardPlaylist, getFavoriteChannels } from '@/lib/app-data'
 import ChannelPlayer from '@/components/channel-player'
+import { channelPlaybackUrl } from '@/lib/stream-url'
 
 type Playlist = DashboardPlaylist
 type FavoriteChannel = Awaited<ReturnType<typeof getFavoriteChannels>>[number]
@@ -182,7 +183,10 @@ export default function DashboardClient({ initialPlaylists, favorites: initialFa
               title={playingChannel.displayName}
               channelId={playingChannel.id}
               bufferSize={playingChannel.bufferSize}
-              url={playingChannel.proxyStreams ? `/api/stream/${playingChannel.id}` : playingChannel.streamUrl}
+              url={channelPlaybackUrl(playingChannel.id, playingChannel.streamUrl, {
+                playbackProfile: playingChannel.playbackProfile,
+                proxyStreams: playingChannel.proxyStreams,
+              })}
               onClose={() => setPlayingChannel(null)}
             />
           </div>

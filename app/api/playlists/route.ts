@@ -37,6 +37,7 @@ export async function POST(req: NextRequest) {
     const m3uRefreshInterval = parseInt(formData.get('m3uRefreshInterval') as string || '24')
     const epgRefreshInterval = parseInt(formData.get('epgRefreshInterval') as string || '24')
     const bufferSize = (formData.get('bufferSize') as string || 'medium')
+    const playbackProfile = (formData.get('playbackProfile') as string || 'direct')
 
     if (!name) return NextResponse.json({ error: 'name required' }, { status: 400 })
     if (sourceKind === 'xtream') {
@@ -77,6 +78,7 @@ export async function POST(req: NextRequest) {
       m3uRefreshInterval,
       epgRefreshInterval,
       bufferSize,
+      playbackProfile,
     }).returning()
     createdPlaylistId = playlist.id
 

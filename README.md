@@ -11,6 +11,7 @@ Self-hosted web app for managing M3U IPTV playlists. Import playlists from a URL
 - Drag to reorder groups
 - Filtered M3U and EPG served as live proxy URLs for any IPTV player on your network
 - Auto-refresh on a schedule (1h / 6h / 12h / 24h / 7d)
+- Optional server playback profiles for proxying, stable HLS remuxing, and FFmpeg-based transcoding
 - Refresh log showing history of all fetches
 
 ## Quick start (Docker)
@@ -29,6 +30,30 @@ docker run -d \
 Open [http://localhost:3000](http://localhost:3000).
 
 If stream proxying is enabled and clients need to reach this app on your LAN or through a reverse proxy, set `PUBLIC_BASE_URL` to the externally reachable base URL so generated proxy stream URLs use the correct address.
+
+Server playback profiles that remux or transcode streams require FFmpeg. The Docker image uses a Debian slim runtime with FFmpeg plus Intel media packages for QSV. If you run the app outside Docker, install FFmpeg and make sure `ffmpeg` is on `PATH`, or set `FFMPEG_PATH=/path/to/ffmpeg`. QSV profiles assume the container can access Intel Quick Sync, usually by passing `/dev/dri` from the host into the container.
+
+## Server playback profiles
+
+Playback profiles control whether clients receive the original stream, a proxied stream, or a server-generated HLS stream. Any mode except Direct routes video through Channeler.
+
+| Profile | What it does | CPU load | GPU load | Best use |
+|---|---|---:|---:|---|
+| Direct source | Sends clients to the provider URL directly | None | None | Lowest latency and no server work |
+| Proxy passthrough | Proxies the original stream through Channeler | Very low | None | VPN routing, hiding provider URL, connection sharing |
+| Stable HLS remux | Uses FFmpeg to repackage into local HLS without re-encoding when possible | Low | None | Better stability and client compatibility with minimal quality loss |
+| Transcode 720p | CPU transcodes to H.264/AAC 720p HLS | Medium | None | Weak clients, lower bandwidth, normalizing odd streams |
+| Transcode 1080p | CPU transcodes to H.264/AAC 1080p HLS | High | None | Client compatibility at higher resolution |
+| QSV 720p | Intel Quick Sync H.264 encode to 720p HLS | Low to medium | Medium | Hardware-assisted 720p transcode |
+| QSV 1080p | Intel Quick Sync H.264 encode to 1080p HLS | Medium | Medium to high | Hardware-assisted 1080p transcode |
+| Enhanced 1080p | Deinterlaces, scales, sharpens, then CPU transcodes | High | None | General quality improvement for soft/interlaced channels |
+| Clean 1080p | Deinterlaces, denoises, lightly sharpens, then CPU transcodes | High | None | Noisy or blocky low-bitrate channels |
+| Sharp 1080p | Deinterlaces, scales, stronger sharpening, then CPU transcodes | High | None | Soft SD/720p channels that need edge detail |
+| Smooth 720p60 | CPU motion interpolation to 60 fps at 720p | Very high | None | Testing smoother motion with lower resolution |
+| Smooth 1080p60 | CPU motion interpolation to 60 fps at 1080p | Extreme | None | Only if the server has enough CPU headroom |
+| Sports 720p60 | Deinterlaces, sharpens, and interpolates to 60 fps at 720p | Very high | None | Sports channels where smoother motion matters |
+
+On the Xeon E3-1245 v6 / Intel HD Graphics P630, start with Stable HLS, QSV 720p, and Enhanced 1080p. Treat Smooth 1080p60 as experimental because motion interpolation is CPU-heavy.
 
 ## Data storage
 
@@ -71,6 +96,7 @@ Runs on [http://localhost:3000](http://localhost:3000). Data is stored in `./dat
 | `DATA_PATH` | `./data` | Path to SQLite DB and raw cache files |
 | `PORT` | `3000` | Port to listen on |
 | `PUBLIC_BASE_URL` | unset | External base URL used when generating proxied stream URLs, e.g. `http://your-server:3000` |
+| `FFMPEG_PATH` | `ffmpeg` | FFmpeg binary used by server playback profiles |
 
 ## Xtream Integration Test
 

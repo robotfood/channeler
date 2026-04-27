@@ -4,6 +4,7 @@ import { useState, useMemo, useEffect } from 'react'
 import Link from 'next/link'
 import type { PlaylistData } from '@/lib/app-data'
 import ChannelPlayer from '@/components/channel-player'
+import { channelPlaybackUrl } from '@/lib/stream-url'
 
 type Channel = PlaylistData['channels'][number]
 
@@ -125,7 +126,10 @@ export default function WatchClient({ initialData }: { initialData: PlaylistData
               title={playingChannel.displayName}
               channelId={playingChannel.id}
               bufferSize={initialData.bufferSize}
-              url={initialData.proxyStreams ? `/api/stream/${playingChannel.id}` : playingChannel.streamUrl}
+              url={channelPlaybackUrl(playingChannel.id, playingChannel.streamUrl, {
+                playbackProfile: initialData.playbackProfile,
+                proxyStreams: initialData.proxyStreams,
+              })}
               onClose={() => setPlayingChannel(null)}
             />
           </div>

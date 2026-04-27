@@ -2,15 +2,9 @@ import { DatabaseSync, type SQLInputValue } from 'node:sqlite'
 import { drizzle } from 'drizzle-orm/sqlite-proxy'
 import * as schema from './schema'
 import path from 'path'
-import fs from 'fs'
-import os from 'os'
+import { dataPath, ensureDataDirectories } from './data-path'
 
-const isNextBuild = process.env.NEXT_PHASE === 'phase-production-build' || process.env.npm_lifecycle_event === 'build'
-const dataPath = isNextBuild
-  ? path.join(os.tmpdir(), `channeler-build-${process.pid}`)
-  : process.env.DATA_PATH ?? path.join(process.cwd(), 'data')
-fs.mkdirSync(dataPath, { recursive: true })
-fs.mkdirSync(path.join(dataPath, 'raw'), { recursive: true })
+ensureDataDirectories()
 
 const dbPath = path.join(dataPath, 'db.sqlite')
 const sqlite = new DatabaseSync(dbPath, { timeout: 10000 })

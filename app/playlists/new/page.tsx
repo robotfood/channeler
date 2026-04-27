@@ -47,6 +47,7 @@ export default function NewPlaylist() {
       fd.append('proxyEpg', 'true')
       fd.append('m3uRefreshInterval', '24')
       fd.append('epgRefreshInterval', '24')
+      fd.append('playbackProfile', 'direct')
       if (sourceKind === 'xtream') {
         fd.append('xtreamServerUrl', xtreamServerUrl)
         fd.append('xtreamUsername', xtreamUsername)
