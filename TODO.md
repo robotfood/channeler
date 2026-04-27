@@ -17,3 +17,9 @@ Set up a GitHub Actions workflow that triggers on push to `main`:
 - [x] Build a multi-arch Docker image (`linux/amd64` + `linux/arm64`)
 - [x] Push to Docker Hub as `emmettmoore/channeler:<build-number>` and `emmettmoore/channeler:latest`
 - [x] Use registry-based layer caching to keep builds fast
+
+## Up Next
+
+- [ ] Add per-playlist buffer settings (small, medium, large, xl)
+- [ ] Add auto-reconnect support in the video player for dropped streams
+- [ ] Implement connection multiplexing/sharing to avoid hitting IPTV max connection limits
