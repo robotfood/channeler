@@ -22,6 +22,7 @@ function toPlaylistSettings(data: PlaylistData) {
     epgRefreshInterval: data.epgRefreshInterval,
     bufferSize: data.bufferSize,
     playbackProfile: data.playbackProfile,
+    transcodeBackend: data.transcodeBackend,
     proxyStreams: data.proxyStreams,
     proxyEpg: data.proxyEpg,
     createdAt: data.createdAt,

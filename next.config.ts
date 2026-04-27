@@ -7,6 +7,9 @@ const configDir = path.dirname(fileURLToPath(import.meta.url))
 const nextConfig: NextConfig = {
   output: 'standalone',
   outputFileTracingRoot: configDir,
+  outputFileTracingExcludes: {
+    '/*': ['data/**/*'],
+  },
   serverExternalPackages: ['better-sqlite3'],
   allowedDevOrigins: ['192.168.50.196'],
   turbopack: {

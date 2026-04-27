@@ -4,7 +4,9 @@ export async function register() {
 
     const { runMigrations } = await import('./lib/migrate')
     const { reloadScheduler } = await import('./lib/scheduler')
+    const { runTranscodeHardwareProbe } = await import('./lib/server-transcode')
     runMigrations()
+    runTranscodeHardwareProbe()
     await reloadScheduler()
   }
 }

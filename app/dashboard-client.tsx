@@ -87,7 +87,7 @@ export default function DashboardClient({ initialPlaylists, favorites: initialFa
                 onClick={() => setPlayingChannel(ch)}
                 className="flex items-center gap-3 p-3 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-lg hover:border-blue-500 dark:hover:border-blue-500 transition-colors text-left group"
               >
-                <div className="relative w-10 h-10 shrink-0 flex items-center justify-center bg-gray-50 dark:bg-gray-800 rounded overflow-hidden">
+                <div className="relative w-12 h-10 shrink-0 flex items-center justify-center bg-gray-900 rounded overflow-hidden">
                   {ch.tvgLogo ? (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img
@@ -183,6 +183,8 @@ export default function DashboardClient({ initialPlaylists, favorites: initialFa
               title={playingChannel.displayName}
               channelId={playingChannel.id}
               bufferSize={playingChannel.bufferSize}
+              playbackProfile={playingChannel.playbackProfile}
+              proxyStreams={playingChannel.proxyStreams}
               url={channelPlaybackUrl(playingChannel.id, playingChannel.streamUrl, {
                 playbackProfile: playingChannel.playbackProfile,
                 proxyStreams: playingChannel.proxyStreams,

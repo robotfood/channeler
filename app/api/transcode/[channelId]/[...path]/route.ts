@@ -23,6 +23,25 @@ function contentTypeFor(pathname: string) {
   return CONTENT_TYPES[ext] || 'application/octet-stream'
 }
 
+function sleep(ms: number) {
+  return new Promise(resolve => setTimeout(resolve, ms))
+}
+
+async function readFileWithSegmentWait(filePath: string, isRunning: () => boolean) {
+  const isSegment = filePath.endsWith('.ts') || filePath.endsWith('.m4s') || filePath.endsWith('.aac')
+  const deadline = Date.now() + (isSegment ? 20_000 : 0)
+
+  while (true) {
+    try {
+      return await fs.readFile(filePath)
+    } catch (err) {
+      const code = (err as NodeJS.ErrnoException).code
+      if (code !== 'ENOENT' || !isSegment || !isRunning() || Date.now() >= deadline) throw err
+      await sleep(250)
+    }
+  }
+}
+
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ channelId: string; path: string[] }> }) {
   const { channelId, path } = await params
   const id = parseInt(channelId)
@@ -37,9 +56,9 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ cha
   }
 
   try {
-    await ensureTranscodeSession(channel, playlist)
-    const filePath = getTranscodeFilePath(channel.id, playlist.playbackProfile, path)
-    const data = await fs.readFile(filePath)
+    const session = await ensureTranscodeSession(channel, playlist)
+    const filePath = getTranscodeFilePath(channel.id, playlist.playbackProfile, playlist.transcodeBackend, path)
+    const data = await readFileWithSegmentWait(filePath, () => session.process.exitCode === null)
     return new NextResponse(data, {
       headers: {
         'Content-Type': contentTypeFor(filePath),
@@ -49,6 +68,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ cha
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err)
     const status = message.includes('ENOENT') ? 404 : 502
+    console.error(`[transcode] channel=${channel.id} profile=${playlist.playbackProfile} status=${status} error=${message}`)
     return new NextResponse(message, { status })
   }
 }

@@ -22,6 +22,7 @@ export async function getDashboardPlaylists() {
       epgRefreshInterval: playlists.epgRefreshInterval,
       bufferSize: playlists.bufferSize,
       playbackProfile: playlists.playbackProfile,
+      transcodeBackend: playlists.transcodeBackend,
       proxyStreams: playlists.proxyStreams,
       proxyEpg: playlists.proxyEpg,
       createdAt: playlists.createdAt,

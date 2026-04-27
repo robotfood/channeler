@@ -1,8 +1,12 @@
-import { DatabaseSync, type SQLInputValue } from 'node:sqlite'
+import type { SQLInputValue } from 'node:sqlite'
 import { drizzle } from 'drizzle-orm/sqlite-proxy'
 import * as schema from './schema'
 import path from 'path'
 import { dataPath, ensureDataDirectories } from './data-path'
+
+const sqliteModule = process.getBuiltinModule?.('node:sqlite') as typeof import('node:sqlite') | undefined
+if (!sqliteModule) throw new Error('node:sqlite is not available in this Node.js runtime')
+const { DatabaseSync } = sqliteModule
 
 ensureDataDirectories()
 
@@ -14,6 +18,7 @@ sqlite.exec('PRAGMA foreign_keys = ON')
 function ensureRuntimeColumns() {
   try { sqlite.exec(`ALTER TABLE playlists ADD COLUMN buffer_size TEXT NOT NULL DEFAULT 'medium'`) } catch {}
   try { sqlite.exec(`ALTER TABLE playlists ADD COLUMN playback_profile TEXT NOT NULL DEFAULT 'direct'`) } catch {}
+  try { sqlite.exec(`ALTER TABLE playlists ADD COLUMN transcode_backend TEXT NOT NULL DEFAULT 'auto'`) } catch {}
 }
 
 ensureRuntimeColumns()

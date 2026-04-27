@@ -86,6 +86,11 @@ const PLAYBACK_PROFILES = [
     detail: 'Interpolates motion to 60 FPS at 720p. CPU intensive, useful for sports and news. Ideal buffer: xl.',
   },
   {
+    value: 'hardware_smooth_720p60',
+    label: 'Hardware Smooth 720p60',
+    detail: 'CPU interpolates motion to 60 FPS at 720p, then the configured hardware backend encodes H.264. Ideal buffer: xl.',
+  },
+  {
     value: 'smooth_1080p60',
     label: 'Smooth 1080p60',
     detail: 'Interpolates motion to 60 FPS at 1080p. Very CPU intensive. Ideal buffer: xl.',
@@ -95,13 +100,19 @@ const PLAYBACK_PROFILES = [
     label: 'Sports 720p60',
     detail: 'Combines deinterlace, sharpening, and 60 FPS interpolation tuned for sports feeds. Ideal buffer: xl.',
   },
+  {
+    value: 'hardware_sports_720p60',
+    label: 'Hardware Sports 720p60',
+    detail: 'CPU handles sports motion enhancement, then the configured hardware backend encodes H.264. Ideal buffer: xl.',
+  },
 ]
 
 type PlaybackProfileValue = typeof PLAYBACK_PROFILES[number]['value']
 
 const TRANSCODE_BACKENDS = [
-  { name: 'auto', detail: 'Uses Apple VideoToolbox on macOS and Intel QSV everywhere else.' },
+  { name: 'auto', detail: 'Runs short FFmpeg test encodes and uses the first working hardware backend, then CPU if none pass.' },
   { name: 'qsv', detail: 'Uses Intel Quick Sync through FFmpeg h264_qsv. Best for Intel iGPU servers with /dev/dri access.' },
+  { name: 'amf', detail: 'Uses AMD hardware encoding through FFmpeg h264_amf when the host exposes a supported AMD GPU.' },
   { name: 'videotoolbox', detail: 'Uses Apple hardware encoding through FFmpeg h264_videotoolbox on macOS.' },
   { name: 'cpu', detail: 'Forces libx264 software encoding. Most compatible, but uses the most CPU.' },
 ]
@@ -123,6 +134,7 @@ export default function PlaylistSettingsClient({ initialData, playlistId }: {
   const [m3uRefreshInterval, setM3uRefreshInterval] = useState(initialData.m3uRefreshInterval ?? 24)
   const [epgRefreshInterval, setEpgRefreshInterval] = useState(initialData.epgRefreshInterval ?? 24)
   const [bufferSize, setBufferSize] = useState(initialData.bufferSize ?? 'medium')
+  const [transcodeBackend, setTranscodeBackend] = useState(initialData.transcodeBackend ?? 'auto')
   const [playbackProfile, setPlaybackProfile] = useState(
     initialData.playbackProfile === 'direct' && initialData.proxyStreams ? 'proxy' : initialData.playbackProfile ?? 'direct'
   )
@@ -163,6 +175,7 @@ export default function PlaylistSettingsClient({ initialData, playlistId }: {
         epgRefreshInterval,
         bufferSize,
         playbackProfile,
+        transcodeBackend,
         proxyStreams: playbackProfile !== 'direct',
         proxyEpg,
         xtreamServerUrl: data.m3uSourceType === 'xtream' ? xtreamServerUrl || null : null,
@@ -308,32 +321,47 @@ export default function PlaylistSettingsClient({ initialData, playlistId }: {
           </div>
 
           {useProxyPlayback && (
-            <fieldset className="space-y-2 rounded-lg border border-gray-200 bg-white p-3 dark:border-gray-800 dark:bg-gray-950/30">
-              <legend className="px-1 text-xs font-medium uppercase tracking-wide text-gray-400 dark:text-gray-500">Proxy mode</legend>
-              {PLAYBACK_PROFILES.map(profile => (
-                <label key={profile.value}
-                  className={`flex cursor-pointer gap-3 rounded-md border p-3 transition-colors ${playbackProfile === profile.value ? 'border-blue-500 bg-blue-50 dark:bg-blue-950/30' : 'border-gray-200 bg-gray-50 hover:border-gray-300 dark:border-gray-800 dark:bg-gray-900 dark:hover:border-gray-700'}`}>
-                  <input type="radio" name="proxyPlaybackProfile" value={profile.value} checked={playbackProfile === profile.value}
-                    onChange={() => selectProxyProfile(profile.value)}
-                    className="mt-1 border-gray-300 text-blue-600 focus:ring-blue-500 dark:border-gray-600" />
-                  <span>
-                    <span className="block text-sm font-medium text-gray-800 dark:text-gray-200">{profile.label}</span>
-                    <span className="block text-xs leading-5 text-gray-500 dark:text-gray-500">{profile.detail}</span>
-                  </span>
-                </label>
-              ))}
-              <div className="space-y-1 pt-1 text-[10px] leading-4 text-gray-400 dark:text-gray-500">
-                <p>Transcode, enhancement, and 60 FPS modes require FFmpeg. Hardware modes use TRANSCODE_BACKEND.</p>
-                <dl className="grid gap-x-3 gap-y-1 sm:grid-cols-[auto_1fr]">
-                  {TRANSCODE_BACKENDS.map(backend => (
-                    <div key={backend.name} className="contents">
-                      <dt className="font-medium text-gray-500 dark:text-gray-400">{backend.name}</dt>
-                      <dd>{backend.detail}</dd>
-                    </div>
-                  ))}
-                </dl>
+            <div className="space-y-3">
+              <div className="flex flex-col gap-1">
+                <label htmlFor="transcodeBackend" className="text-xs text-gray-500 dark:text-gray-400">Hardware Backend</label>
+                <select id="transcodeBackend" value={transcodeBackend} onChange={e => setTranscodeBackend(e.target.value)}
+                  className="w-full max-w-[260px] bg-gray-50 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded px-2 py-1 text-sm focus:outline-none focus:border-blue-500">
+                  <option value="auto">Auto detect</option>
+                  <option value="qsv">Intel QSV</option>
+                  <option value="amf">AMD AMF</option>
+                  <option value="videotoolbox">Apple VideoToolbox</option>
+                  <option value="cpu">CPU fallback</option>
+                </select>
+                <p className="text-[10px] text-gray-400 dark:text-gray-500">Only hardware profiles use this. Auto validates FFmpeg hardware encoders with short test encodes, then falls back to CPU.</p>
               </div>
-            </fieldset>
+
+              <fieldset className="space-y-2 rounded-lg border border-gray-200 bg-white p-3 dark:border-gray-800 dark:bg-gray-950/30">
+                <legend className="px-1 text-xs font-medium uppercase tracking-wide text-gray-400 dark:text-gray-500">Proxy mode</legend>
+                {PLAYBACK_PROFILES.map(profile => (
+                  <label key={profile.value}
+                    className={`flex cursor-pointer gap-3 rounded-md border p-3 transition-colors ${playbackProfile === profile.value ? 'border-blue-500 bg-blue-50 dark:bg-blue-950/30' : 'border-gray-200 bg-gray-50 hover:border-gray-300 dark:border-gray-800 dark:bg-gray-900 dark:hover:border-gray-700'}`}>
+                    <input type="radio" name="proxyPlaybackProfile" value={profile.value} checked={playbackProfile === profile.value}
+                      onChange={() => selectProxyProfile(profile.value)}
+                      className="mt-1 border-gray-300 text-blue-600 focus:ring-blue-500 dark:border-gray-600" />
+                    <span>
+                      <span className="block text-sm font-medium text-gray-800 dark:text-gray-200">{profile.label}</span>
+                      <span className="block text-xs leading-5 text-gray-500 dark:text-gray-500">{profile.detail}</span>
+                    </span>
+                  </label>
+                ))}
+                <div className="space-y-1 pt-1 text-[10px] leading-4 text-gray-400 dark:text-gray-500">
+                  <p>Transcode, enhancement, and 60 FPS modes require FFmpeg. Hardware modes use the backend setting above.</p>
+                  <dl className="grid gap-x-3 gap-y-1 sm:grid-cols-[auto_1fr]">
+                    {TRANSCODE_BACKENDS.map(backend => (
+                      <div key={backend.name} className="contents">
+                        <dt className="font-medium text-gray-500 dark:text-gray-400">{backend.name}</dt>
+                        <dd>{backend.detail}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                </div>
+              </fieldset>
+            </div>
           )}
         </div>
 

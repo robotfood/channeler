@@ -409,6 +409,8 @@ export default function PlaylistEditorClient({ initialData, playlistId }: {
               title={playingChannel.displayName}
               channelId={playingChannel.id}
               bufferSize={data.bufferSize}
+              playbackProfile={data.playbackProfile}
+              proxyStreams={data.proxyStreams}
               url={channelPlaybackUrl(playingChannel.id, playingChannel.streamUrl, {
                 playbackProfile: data.playbackProfile,
                 proxyStreams: data.proxyStreams,
@@ -447,16 +449,17 @@ function ChannelRow({ channel, onToggle, onRename, onDelete, onPlay, onFavorite,
           className="rounded border-gray-300 dark:border-gray-600 accent-blue-500 shrink-0" />
       )}
       {channel.tvgLogo && (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
-          src={`/api/proxy/logo?url=${encodeURIComponent(channel.tvgLogo)}`}
-          alt=""
-          width={24}
-          height={24}
-          className="size-6 object-contain rounded shrink-0"
-          style={{ width: 24, height: 24, maxWidth: 24, maxHeight: 24 }}
-          onError={e => { (e.target as HTMLImageElement).style.display = 'none' }}
-        />
+        <span className="w-8 h-6 shrink-0 flex items-center justify-center bg-gray-900 rounded overflow-hidden">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={`/api/proxy/logo?url=${encodeURIComponent(channel.tvgLogo)}`}
+            alt=""
+            width={24}
+            height={24}
+            className="w-full h-full object-contain"
+            onError={e => { (e.target as HTMLImageElement).style.display = 'none' }}
+          />
+        </span>
       )}
       {editing
         ? <input autoFocus value={draft}

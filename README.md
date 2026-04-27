@@ -31,7 +31,7 @@ Open [http://localhost:3000](http://localhost:3000).
 
 If stream proxying is enabled and clients need to reach this app on your LAN or through a reverse proxy, set `PUBLIC_BASE_URL` to the externally reachable base URL so generated proxy stream URLs use the correct address.
 
-Server playback profiles that remux or transcode streams require FFmpeg. The Docker image uses a Debian slim runtime with FFmpeg plus Intel media packages for QSV. If you run the app outside Docker, install FFmpeg and make sure `ffmpeg` is on `PATH`, or set `FFMPEG_PATH=/path/to/ffmpeg`. Hardware profiles use `TRANSCODE_BACKEND`: `auto`, `qsv`, `videotoolbox`, or `cpu`. QSV assumes the container can access Intel Quick Sync, usually by passing `/dev/dri` from the host into the container. On Apple hardware, use `videotoolbox`; FFmpeg exposes Apple hardware H.264 through VideoToolbox rather than a separate Metal encoder.
+Server playback profiles that remux or transcode streams require FFmpeg. The Docker image uses a Debian slim runtime with FFmpeg plus Intel media packages for QSV. If you run the app outside Docker, install FFmpeg and make sure `ffmpeg` is on `PATH`, or set `FFMPEG_PATH=/path/to/ffmpeg`. Hardware profiles use each playlist's Hardware Backend setting: `auto`, `qsv`, `videotoolbox`, or `cpu`. QSV assumes the container can access Intel Quick Sync, usually by passing `/dev/dri` from the host into the container. On Apple hardware, use `videotoolbox`; FFmpeg exposes Apple hardware H.264 through VideoToolbox rather than a separate Metal encoder.
 
 ## Server playback profiles
 
@@ -51,10 +51,12 @@ Playback profiles control whether clients receive the original stream, a proxied
 | Clean 1080p | Deinterlaces, denoises, lightly sharpens, then CPU transcodes | Large | High | None | Noisy or blocky low-bitrate channels |
 | Sharp 1080p | Deinterlaces, scales, stronger sharpening, then CPU transcodes | Large | High | None | Soft SD/720p channels that need edge detail |
 | Smooth 720p60 | CPU motion interpolation to 60 fps at 720p | XL | Very high | None | Testing smoother motion with lower resolution |
+| Hardware Smooth 720p60 | CPU motion interpolation to 60 fps at 720p, then hardware H.264 encode | XL | High | Medium | Smoother sports/news with less encode load |
 | Smooth 1080p60 | CPU motion interpolation to 60 fps at 1080p | XL | Extreme | None | Only if the server has enough CPU headroom |
 | Sports 720p60 | Deinterlaces, sharpens, and interpolates to 60 fps at 720p | XL | Very high | None | Sports channels where smoother motion matters |
+| Hardware Sports 720p60 | CPU deinterlaces, sharpens, interpolates to 60 fps, then hardware H.264 encode | XL | High | Medium | Best first try for sports on Intel QSV systems |
 
-On the Xeon E3-1245 v6 / Intel HD Graphics P630, start with Stable HLS, Hardware 720p, and Enhanced 1080p. Treat Hardware 4K and Smooth 1080p60 as experimental because they can be bandwidth-heavy or CPU-heavy depending on the stream.
+On the Xeon E3-1245 v6 / Intel HD Graphics P630, start with Stable HLS, Hardware 720p, Enhanced 1080p, and Hardware Smooth 720p60 for sports. Treat Hardware 4K and Smooth 1080p60 as experimental because they can be bandwidth-heavy or CPU-heavy depending on the stream.
 
 The buffer setting controls the steady-state playback buffer, not a long startup wait. The player starts close to the live edge and then fills the selected buffer size in the background. Server-generated HLS uses short 2-second segments to reduce channel-change delay while still allowing larger buffers for unstable or CPU-heavy profiles.
 
@@ -100,16 +102,20 @@ Runs on [http://localhost:3000](http://localhost:3000). Data is stored in `./dat
 | `PORT` | `3000` | Port to listen on |
 | `PUBLIC_BASE_URL` | unset | External base URL used when generating proxied stream URLs, e.g. `http://your-server:3000` |
 | `FFMPEG_PATH` | `ffmpeg` | FFmpeg binary used by server playback profiles |
-| `TRANSCODE_BACKEND` | `auto` | Hardware profile backend: `auto`, `qsv`, `videotoolbox`, or `cpu`. `auto` uses VideoToolbox on macOS and QSV elsewhere |
+| `TRANSCODE_BACKEND` | `auto` | Default hardware profile backend for playlists that use Auto: `auto`, `qsv`, `amf`, `videotoolbox`, or `cpu` |
+| `TRANSCODE_RECOMMENDED_BACKEND` | set at runtime | App-populated recommendation from short FFmpeg hardware encode probes |
+| `TRANSCODE_RECOMMENDED_ENCODER` | set at runtime | FFmpeg encoder selected by the runtime probe, such as `h264_qsv`, `h264_amf`, `h264_videotoolbox`, or `libx264` |
+| `TRANSCODE_THREADS` | `0` | FFmpeg thread count for transcode/filter work. `0` lets FFmpeg auto-size; set a number to cap CPU use |
 
 ### Transcode backends
 
-`TRANSCODE_BACKEND` only affects Hardware playback profiles. CPU-only profiles such as Enhanced, Clean, Sharp, and Smooth still use FFmpeg software filters and `libx264`.
+Each playlist can choose a Hardware Backend in settings. `TRANSCODE_BACKEND` is only the server default behind Auto. These backend choices only affect Hardware playback profiles. CPU-only profiles such as Enhanced, Clean, Sharp, and Smooth still use FFmpeg software filters and `libx264`.
 
 | Backend | What it uses | Best for | Notes |
 |---|---|---|---|
-| `auto` | VideoToolbox on macOS, QSV elsewhere | Default deployments | Picks the likely hardware encoder for the host OS |
+| `auto` | Runs short FFmpeg test encodes for hardware backends, then falls back to CPU | Default deployments | The app stores the selected result in `TRANSCODE_RECOMMENDED_BACKEND` for the current Node process |
 | `qsv` | Intel Quick Sync via FFmpeg `h264_qsv` | Intel iGPU servers and Unraid hosts with `/dev/dri` passed through | Best match for Xeon E3-1245 v6 / Intel P630 |
+| `amf` | AMD AMF via FFmpeg `h264_amf` | Hosts with supported AMD GPU encode access | Requires an FFmpeg build with AMF plus the host GPU/runtime exposed to the app |
 | `videotoolbox` | Apple VideoToolbox via FFmpeg `h264_videotoolbox` | macOS hosts and Apple Silicon | This is the practical Apple hardware encoder path; it is not exposed as a separate Metal encoder in FFmpeg |
 | `cpu` | FFmpeg `libx264` software encoding | Debugging or hosts without hardware encoder access | Most compatible, but highest CPU usage |
 

@@ -9,6 +9,8 @@ interface Props {
   title: string
   channelId: number
   bufferSize?: string
+  playbackProfile?: string | null
+  proxyStreams?: boolean
   onClose: () => void
 }
 
@@ -17,6 +19,18 @@ interface EpgData {
   desc: string
   start: string
   stop: string
+}
+
+interface PlaybackStats {
+  width: number | null
+  height: number | null
+  fps: number | null
+}
+
+interface TranscodeStats {
+  cpuPercent: number | null
+  memoryPercent: number | null
+  backend: string | null
 }
 
 const BUFFER_CONFIGS: Record<string, {
@@ -32,15 +46,59 @@ const BUFFER_CONFIGS: Record<string, {
   xl:     { backBufferLength: 120, maxBufferLength: 240, maxMaxBufferLength: 600, liveSyncDurationCount: 2, liveMaxLatencyDurationCount: 6 },
 }
 
-export default function ChannelPlayer({ url, title, channelId, bufferSize = 'medium', onClose }: Props) {
+const PLAYBACK_PROFILE_LABELS: Record<string, string> = {
+  direct: 'Direct',
+  proxy: 'Proxy passthrough',
+  stable_hls: 'Stable HLS remux',
+  transcode_720p: 'Transcode 720p',
+  transcode_1080p: 'Transcode 1080p',
+  qsv_720p: 'Hardware 720p',
+  qsv_1080p: 'Hardware 1080p',
+  qsv_4k: 'Hardware 4K',
+  enhanced_1080p: 'Enhanced 1080p',
+  clean_1080p: 'Clean 1080p',
+  sharp_1080p: 'Sharp 1080p',
+  smooth_720p60: 'Smooth 720p60',
+  hardware_smooth_720p60: 'Hardware Smooth 720p60',
+  smooth_1080p60: 'Smooth 1080p60',
+  sports_720p60: 'Sports 720p60',
+  hardware_sports_720p60: 'Hardware Sports 720p60',
+}
+
+function playbackModeLabel(playbackProfile: string | null | undefined, proxyStreams: boolean | undefined) {
+  const profile = playbackProfile || (proxyStreams ? 'proxy' : 'direct')
+  if (profile === 'direct' && proxyStreams) return 'Proxy: Proxy passthrough'
+  if (profile === 'direct') return 'Direct'
+  return `Proxy: ${PLAYBACK_PROFILE_LABELS[profile] ?? profile}`
+}
+
+function isBenignMediaAbort(reason: unknown) {
+  const message = reason instanceof Error ? reason.message : String(reason)
+  return message.includes('media resource was aborted by the user agent') || message.includes('aborted by the user agent')
+}
+
+export default function ChannelPlayer({ url, title, channelId, bufferSize = 'medium', playbackProfile, proxyStreams, onClose }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null)
   const [error, setError] = useState<string | null>(null)
   const [epg, setEpg] = useState<EpgData | null>(null)
   const [loadingEpg, setLoadingEpg] = useState(false)
   const [isCasting, setIsCasting] = useState(false)
+  const [playbackStats, setPlaybackStats] = useState<PlaybackStats>({ width: null, height: null, fps: null })
+  const [transcodeStats, setTranscodeStats] = useState<TranscodeStats | null>(null)
   const hlsRef = useRef<Hls | null>(null)
   const retryCountRef = useRef(0)
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const frameStatsRef = useRef({ frames: 0, startedAt: 0 })
+  const modeLabel = playbackModeLabel(playbackProfile, proxyStreams)
+
+  useEffect(() => {
+    function handleUnhandledRejection(event: PromiseRejectionEvent) {
+      if (isBenignMediaAbort(event.reason)) event.preventDefault()
+    }
+
+    window.addEventListener('unhandledrejection', handleUnhandledRejection)
+    return () => window.removeEventListener('unhandledrejection', handleUnhandledRejection)
+  }, [])
 
   useEffect(() => {
     // Listen for Cast state changes
@@ -117,12 +175,92 @@ export default function ChannelPlayer({ url, title, channelId, bufferSize = 'med
   }, [channelId])
 
   useEffect(() => {
+    if (!url.startsWith('/api/transcode/')) {
+      const resetTimer = setTimeout(() => setTranscodeStats(null), 0)
+      return () => clearTimeout(resetTimer)
+    }
+
+    let cancelled = false
+
+    async function fetchTranscodeStats() {
+      try {
+        const res = await fetch('/api/transcode/status', { cache: 'no-store' })
+        if (!res.ok) return
+        const data = await res.json() as {
+          sessions?: Array<{
+            channelId: number
+            cpuPercent: number | null
+            memoryPercent: number | null
+            backend: string | null
+            running: boolean
+          }>
+        }
+        const session = data.sessions?.find(item => item.channelId === channelId && item.running)
+        if (!cancelled) {
+          setTranscodeStats(session
+            ? {
+                cpuPercent: session.cpuPercent,
+                memoryPercent: session.memoryPercent,
+                backend: session.backend,
+              }
+            : null)
+        }
+      } catch {
+        if (!cancelled) setTranscodeStats(null)
+      }
+    }
+
+    fetchTranscodeStats()
+    const timer = setInterval(fetchTranscodeStats, 2500)
+    return () => {
+      cancelled = true
+      clearInterval(timer)
+    }
+  }, [channelId, url])
+
+  useEffect(() => {
     const video = videoRef.current
     if (!video) return
+    const media = video
 
     setError(null)
+    setPlaybackStats({ width: null, height: null, fps: null })
+    frameStatsRef.current = { frames: 0, startedAt: 0 }
     retryCountRef.current = 0
     const config = BUFFER_CONFIGS[bufferSize] || BUFFER_CONFIGS.medium
+    let frameCallbackId: number | null = null
+
+    function updateResolution() {
+      setPlaybackStats(current => ({
+        ...current,
+        width: media.videoWidth || null,
+        height: media.videoHeight || null,
+      }))
+    }
+
+    function updateFrameRate(now: DOMHighResTimeStamp) {
+      const stats = frameStatsRef.current
+      if (!stats.startedAt) stats.startedAt = now
+      stats.frames += 1
+
+      const elapsed = now - stats.startedAt
+      if (elapsed >= 1500) {
+        const fps = stats.frames / (elapsed / 1000)
+        setPlaybackStats(current => ({ ...current, fps }))
+        stats.frames = 0
+        stats.startedAt = now
+      }
+
+      if ('requestVideoFrameCallback' in media) {
+        frameCallbackId = media.requestVideoFrameCallback(updateFrameRate)
+      }
+    }
+
+    media.addEventListener('loadedmetadata', updateResolution)
+    media.addEventListener('resize', updateResolution)
+    if ('requestVideoFrameCallback' in media) {
+      frameCallbackId = media.requestVideoFrameCallback(updateFrameRate)
+    }
 
     if (Hls.isSupported()) {
       const hls = new Hls({
@@ -137,10 +275,12 @@ export default function ChannelPlayer({ url, title, channelId, bufferSize = 'med
         liveMaxLatencyDurationCount: config.liveMaxLatencyDurationCount,
         manifestLoadingMaxRetry: 10,
         levelLoadingMaxRetry: 10,
+        fragLoadingMaxRetry: 10,
+        appendErrorMaxRetry: 6,
       })
       hlsRef.current = hls
       hls.loadSource(url)
-      hls.attachMedia(video)
+      hls.attachMedia(media)
       hls.on(Hls.Events.MANIFEST_PARSED, () => {
         retryCountRef.current = 0
         setError(null)
@@ -158,6 +298,12 @@ export default function ChannelPlayer({ url, title, channelId, bufferSize = 'med
               }, Math.min(1000 * Math.pow(2, retryCountRef.current), 30000))
               break
             case Hls.ErrorTypes.MEDIA_ERROR:
+              if (String(data.details ?? '').toLowerCase().includes('bufferappend')) {
+                setError('Playback buffer is catching up...')
+                hls.startLoad()
+                break
+              }
+
               setError('Media error - trying to recover...')
               hls.recoverMediaError()
               break
@@ -170,12 +316,17 @@ export default function ChannelPlayer({ url, title, channelId, bufferSize = 'med
       })
     } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
       // Native HLS support (Safari/iOS)
-      video.src = url
+      media.src = url
     } else {
       setError('Your browser does not support HLS playback')
     }
 
     return () => {
+      media.removeEventListener('loadedmetadata', updateResolution)
+      media.removeEventListener('resize', updateResolution)
+      if (frameCallbackId !== null && 'cancelVideoFrameCallback' in media) {
+        media.cancelVideoFrameCallback(frameCallbackId)
+      }
       if (reconnectTimerRef.current) {
         clearTimeout(reconnectTimerRef.current)
         reconnectTimerRef.current = null
@@ -190,7 +341,23 @@ export default function ChannelPlayer({ url, title, channelId, bufferSize = 'med
   return (
     <div className="flex flex-col h-full bg-black text-white overflow-hidden rounded-lg shadow-xl border border-gray-800">
       <div className="flex items-center justify-between p-3 bg-gray-900 border-b border-gray-800">
-        <h2 className="text-sm font-medium truncate flex-1 pr-4">{title}</h2>
+        <div className="min-w-0 flex-1 pr-4">
+          <h2 className="text-sm font-medium truncate">{title}</h2>
+          {(playbackStats.width && playbackStats.height) || playbackStats.fps ? (
+            <p className="mt-0.5 text-[11px] text-gray-400">
+              {modeLabel}
+              {' • '}
+              {playbackStats.width && playbackStats.height ? `${playbackStats.width}x${playbackStats.height}` : 'Resolution pending'}
+              {playbackStats.fps ? ` • ${playbackStats.fps.toFixed(playbackStats.fps >= 50 ? 0 : 2)} fps` : ' • FPS pending'}
+              {transcodeStats ? ` • CPU ${transcodeStats.cpuPercent === null ? 'n/a' : `${transcodeStats.cpuPercent.toFixed(0)}%`} • GPU ${transcodeStats.backend ?? 'n/a'}` : ''}
+            </p>
+          ) : (
+            <p className="mt-0.5 text-[11px] text-gray-400">
+              {modeLabel}
+              {transcodeStats ? ` • CPU ${transcodeStats.cpuPercent === null ? 'n/a' : `${transcodeStats.cpuPercent.toFixed(0)}%`} • GPU ${transcodeStats.backend ?? 'n/a'}` : ''}
+            </p>
+          )}
+        </div>
         <div className="flex items-center gap-3">
           <style jsx global>{`
             google-cast-launcher {

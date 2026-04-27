@@ -1,5 +1,6 @@
-import { spawn, type ChildProcess } from 'node:child_process'
+import { execFileSync, spawn, type ChildProcess } from 'node:child_process'
 import fs from 'node:fs'
+import os from 'node:os'
 import path from 'node:path'
 import { dataPath } from '@/lib/data-path'
 import { normalizePlaybackProfile, type PlaybackProfile } from '@/lib/playback-profile'
@@ -12,6 +13,7 @@ type Session = {
   key: string
   channelId: number
   profile: PlaybackProfile
+  backend: Exclude<HardwareBackend, 'auto'>
   sourceUrl: string
   outputDir: string
   playlistPath: string
@@ -22,22 +24,133 @@ type Session = {
 }
 
 const IDLE_TIMEOUT_MS = 90_000
-const STARTUP_TIMEOUT_MS = 15_000
+const STARTUP_TIMEOUT_MS = 20_000
+const HEAVY_STARTUP_TIMEOUT_MS = 45_000
 const sessions = new Map<string, Session>()
-const HARDWARE_BACKENDS = ['auto', 'qsv', 'videotoolbox', 'cpu'] as const
+const HARDWARE_BACKENDS = ['auto', 'qsv', 'amf', 'videotoolbox', 'cpu'] as const
+const HARDWARE_PROBE_ORDER: Array<Exclude<HardwareBackend, 'auto' | 'cpu'>> = ['videotoolbox', 'qsv', 'amf']
 
 type HardwareBackend = typeof HARDWARE_BACKENDS[number]
+let detectedHardwareBackend: Exclude<HardwareBackend, 'auto'> | null = null
+let hardwareProbeResults: Partial<Record<Exclude<HardwareBackend, 'auto'>, string>> = {}
 
-function hardwareBackend(): HardwareBackend {
-  const value = process.env.TRANSCODE_BACKEND?.toLowerCase()
+function hardwareBackend(value = process.env.TRANSCODE_BACKEND): HardwareBackend {
+  value = value?.toLowerCase()
   if (HARDWARE_BACKENDS.includes(value as HardwareBackend)) return value as HardwareBackend
   return 'auto'
 }
 
-function resolvedHardwareBackend() {
-  const backend = hardwareBackend()
-  if (backend === 'auto') return process.platform === 'darwin' ? 'videotoolbox' : 'qsv'
+function resolvedHardwareBackend(value?: string | null) {
+  const backend = hardwareBackend(value ?? undefined)
+  if (backend === 'auto') {
+    if (detectedHardwareBackend) return detectedHardwareBackend
+
+    return probeRecommendedHardwareBackend()
+  }
   return backend
+}
+
+function encoderForBackend(backend: Exclude<HardwareBackend, 'auto' | 'cpu'>) {
+  switch (backend) {
+    case 'videotoolbox':
+      return 'h264_videotoolbox'
+    case 'qsv':
+      return 'h264_qsv'
+    case 'amf':
+      return 'h264_amf'
+  }
+}
+
+function probeFormatForBackend(backend: Exclude<HardwareBackend, 'auto' | 'cpu'>) {
+  return backend === 'videotoolbox' ? 'format=yuv420p' : 'format=nv12'
+}
+
+function ffmpegEncoders() {
+  return execFileSync(process.env.FFMPEG_PATH || 'ffmpeg', ['-hide_banner', '-encoders'], {
+    encoding: 'utf8',
+    timeout: 3000,
+  })
+}
+
+function testHardwareBackend(backend: Exclude<HardwareBackend, 'auto' | 'cpu'>, encoders: string) {
+  const encoder = encoderForBackend(backend)
+  if (!encoders.includes(encoder)) return `${encoder} is not compiled into FFmpeg`
+
+  try {
+    execFileSync(process.env.FFMPEG_PATH || 'ffmpeg', [
+      '-hide_banner',
+      '-loglevel', 'error',
+      '-f', 'lavfi',
+      '-i', 'testsrc2=size=128x72:rate=30',
+      '-t', '0.5',
+      '-vf', probeFormatForBackend(backend),
+      '-an',
+      '-c:v', encoder,
+      '-f', 'null',
+      '-',
+    ], {
+      encoding: 'utf8',
+      timeout: 8000,
+    })
+    return 'ok'
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    return message.slice(-500)
+  }
+}
+
+function probeRecommendedHardwareBackend() {
+  if (detectedHardwareBackend) return detectedHardwareBackend
+
+  let encoders = ''
+  try {
+    encoders = ffmpegEncoders()
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err)
+    detectedHardwareBackend = 'cpu'
+    hardwareProbeResults = { cpu: `FFmpeg encoder probe failed: ${message.slice(-500)}` }
+    process.env.TRANSCODE_RECOMMENDED_BACKEND = detectedHardwareBackend
+    console.log(`[transcode] hardware probe selected=${detectedHardwareBackend} reason="${hardwareProbeResults.cpu}"`)
+    return detectedHardwareBackend
+  }
+
+  hardwareProbeResults = {}
+  for (const backend of HARDWARE_PROBE_ORDER) {
+    const result = testHardwareBackend(backend, encoders)
+    hardwareProbeResults[backend] = result
+    console.log(`[transcode] hardware probe backend=${backend} encoder=${encoderForBackend(backend)} result="${result}"`)
+    if (result === 'ok') {
+      detectedHardwareBackend = backend
+      process.env.TRANSCODE_RECOMMENDED_BACKEND = backend
+      process.env.TRANSCODE_RECOMMENDED_ENCODER = encoderForBackend(backend)
+      console.log(`[transcode] hardware probe selected=${backend} encoder=${encoderForBackend(backend)} platform=${process.platform}`)
+      return detectedHardwareBackend
+    }
+  }
+
+  detectedHardwareBackend = 'cpu'
+  hardwareProbeResults.cpu = 'No tested hardware H.264 encoder completed a validation encode'
+  process.env.TRANSCODE_RECOMMENDED_BACKEND = detectedHardwareBackend
+  process.env.TRANSCODE_RECOMMENDED_ENCODER = 'libx264'
+  console.log(`[transcode] hardware probe selected=${detectedHardwareBackend} encoder=libx264 platform=${process.platform}`)
+  return detectedHardwareBackend
+}
+
+function transcodeThreads() {
+  const raw = process.env.TRANSCODE_THREADS
+  if (!raw) return 0
+
+  const parsed = parseInt(raw, 10)
+  if (!Number.isFinite(parsed) || parsed < 0) return 0
+  return Math.min(parsed, os.cpus().length || parsed)
+}
+
+function threadingArgs() {
+  const threads = transcodeThreads()
+  return [
+    '-filter_threads', String(threads || Math.max(1, Math.min(os.cpus().length || 1, 8))),
+    '-threads', String(threads),
+  ]
 }
 
 function transcodeRoot() {
@@ -46,8 +159,22 @@ function transcodeRoot() {
   return root
 }
 
-function sessionKey(channelId: number, profile: PlaybackProfile) {
-  return `${channelId}:${profile}`
+function sessionKey(channelId: number, profile: PlaybackProfile, backend: Exclude<HardwareBackend, 'auto'>) {
+  return `${channelId}:${profile}:${backend}`
+}
+
+function summarizeArgs(args: string[]) {
+  const inputIndex = args.indexOf('-i')
+  if (inputIndex >= 0 && inputIndex + 1 < args.length) {
+    const sanitized = [...args]
+    sanitized[inputIndex + 1] = '[source-url]'
+    return sanitized.join(' ')
+  }
+  return args.join(' ')
+}
+
+function startupTimeoutFor(profile: PlaybackProfile) {
+  return profile.includes('smooth') || profile.includes('sports') ? HEAVY_STARTUP_TIMEOUT_MS : STARTUP_TIMEOUT_MS
 }
 
 function emptyDirectory(dir: string) {
@@ -83,6 +210,8 @@ function cpuH264Args(height: number, videoBitrate: string, maxrate: string, bufs
     '-c:v', 'libx264',
     '-preset', 'veryfast',
     '-tune', 'zerolatency',
+    '-force_key_frames', 'expr:gte(t,n_forced*2)',
+    '-sc_threshold', '0',
     '-b:v', videoBitrate,
     '-maxrate', maxrate,
     '-bufsize', bufsize,
@@ -91,8 +220,7 @@ function cpuH264Args(height: number, videoBitrate: string, maxrate: string, bufs
   ]
 }
 
-function hardwareH264Args(height: number, videoBitrate: string, maxrate: string, bufsize: string, audioBitrate: string) {
-  const backend = resolvedHardwareBackend()
+function hardwareH264Args(backend: Exclude<HardwareBackend, 'auto'>, height: number, videoBitrate: string, maxrate: string, bufsize: string, audioBitrate: string) {
   if (backend === 'cpu') return cpuH264Args(height, videoBitrate, maxrate, bufsize, audioBitrate)
 
   if (backend === 'videotoolbox') {
@@ -100,6 +228,22 @@ function hardwareH264Args(height: number, videoBitrate: string, maxrate: string,
       '-map', '0:v:0?', '-map', '0:a:0?',
       '-vf', `scale=-2:${height}:flags=lanczos,format=yuv420p`,
       '-c:v', 'h264_videotoolbox',
+      '-force_key_frames', 'expr:gte(t,n_forced*2)',
+      '-b:v', videoBitrate,
+      '-maxrate', maxrate,
+      '-bufsize', bufsize,
+      '-c:a', 'aac',
+      '-b:a', audioBitrate,
+    ]
+  }
+
+  if (backend === 'amf') {
+    return [
+      '-map', '0:v:0?', '-map', '0:a:0?',
+      '-vf', `scale=-2:${height}:flags=lanczos,format=nv12`,
+      '-c:v', 'h264_amf',
+      '-quality', 'speed',
+      '-force_key_frames', 'expr:gte(t,n_forced*2)',
       '-b:v', videoBitrate,
       '-maxrate', maxrate,
       '-bufsize', bufsize,
@@ -113,6 +257,7 @@ function hardwareH264Args(height: number, videoBitrate: string, maxrate: string,
     '-vf', `scale=-2:${height}:flags=lanczos,format=nv12`,
     '-c:v', 'h264_qsv',
     '-preset', 'veryfast',
+    '-force_key_frames', 'expr:gte(t,n_forced*2)',
     '-b:v', videoBitrate,
     '-maxrate', maxrate,
     '-bufsize', bufsize,
@@ -121,7 +266,76 @@ function hardwareH264Args(height: number, videoBitrate: string, maxrate: string,
   ]
 }
 
-function profileArgs(profile: PlaybackProfile) {
+function hardwareFilteredH264Args(backend: Exclude<HardwareBackend, 'auto'>, filter: string, videoBitrate: string, maxrate: string, bufsize: string, audioBitrate: string, fps = 60) {
+  if (backend === 'cpu') {
+    return [
+      '-map', '0:v:0?', '-map', '0:a:0?',
+      '-vf', `${filter},format=yuv420p`,
+      '-c:v', 'libx264',
+      '-preset', 'veryfast',
+      '-tune', 'zerolatency',
+      '-r', String(fps),
+      '-g', String(fps * 2),
+      '-keyint_min', String(fps * 2),
+      '-sc_threshold', '0',
+      '-b:v', videoBitrate,
+      '-maxrate', maxrate,
+      '-bufsize', bufsize,
+      '-c:a', 'aac',
+      '-b:a', audioBitrate,
+    ]
+  }
+
+  if (backend === 'videotoolbox') {
+    return [
+      '-map', '0:v:0?', '-map', '0:a:0?',
+      '-vf', `${filter},format=yuv420p`,
+      '-c:v', 'h264_videotoolbox',
+      '-r', String(fps),
+      '-g', String(fps * 2),
+      '-force_key_frames', 'expr:gte(t,n_forced*2)',
+      '-b:v', videoBitrate,
+      '-maxrate', maxrate,
+      '-bufsize', bufsize,
+      '-c:a', 'aac',
+      '-b:a', audioBitrate,
+    ]
+  }
+
+  if (backend === 'amf') {
+    return [
+      '-map', '0:v:0?', '-map', '0:a:0?',
+      '-vf', `${filter},format=nv12`,
+      '-c:v', 'h264_amf',
+      '-quality', 'speed',
+      '-r', String(fps),
+      '-g', String(fps * 2),
+      '-force_key_frames', 'expr:gte(t,n_forced*2)',
+      '-b:v', videoBitrate,
+      '-maxrate', maxrate,
+      '-bufsize', bufsize,
+      '-c:a', 'aac',
+      '-b:a', audioBitrate,
+    ]
+  }
+
+  return [
+    '-map', '0:v:0?', '-map', '0:a:0?',
+    '-vf', `${filter},format=nv12`,
+    '-c:v', 'h264_qsv',
+    '-preset', 'veryfast',
+    '-r', String(fps),
+    '-g', String(fps * 2),
+    '-force_key_frames', 'expr:gte(t,n_forced*2)',
+    '-b:v', videoBitrate,
+    '-maxrate', maxrate,
+    '-bufsize', bufsize,
+    '-c:a', 'aac',
+    '-b:a', audioBitrate,
+  ]
+}
+
+function profileArgs(profile: PlaybackProfile, backend: Exclude<HardwareBackend, 'auto'>) {
   switch (profile) {
     case 'stable_hls':
       return ['-map', '0:v:0?', '-map', '0:a:0?', '-c', 'copy']
@@ -130,11 +344,11 @@ function profileArgs(profile: PlaybackProfile) {
     case 'transcode_1080p':
       return cpuH264Args(1080, '6000k', '7200k', '12000k', '160k')
     case 'qsv_720p':
-      return hardwareH264Args(720, '3500k', '4200k', '7000k', '128k')
+      return hardwareH264Args(backend, 720, '3500k', '4200k', '7000k', '128k')
     case 'qsv_1080p':
-      return hardwareH264Args(1080, '6000k', '7200k', '12000k', '160k')
+      return hardwareH264Args(backend, 1080, '6000k', '7200k', '12000k', '160k')
     case 'qsv_4k':
-      return hardwareH264Args(2160, '14000k', '18000k', '28000k', '192k')
+      return hardwareH264Args(backend, 2160, '14000k', '18000k', '28000k', '192k')
     case 'enhanced_1080p':
       return [
         '-map', '0:v:0?', '-map', '0:a:0?',
@@ -142,6 +356,8 @@ function profileArgs(profile: PlaybackProfile) {
         '-c:v', 'libx264',
         '-preset', 'veryfast',
         '-tune', 'zerolatency',
+        '-force_key_frames', 'expr:gte(t,n_forced*2)',
+        '-sc_threshold', '0',
         '-b:v', '6500k',
         '-maxrate', '8000k',
         '-bufsize', '13000k',
@@ -155,6 +371,8 @@ function profileArgs(profile: PlaybackProfile) {
         '-c:v', 'libx264',
         '-preset', 'veryfast',
         '-tune', 'zerolatency',
+        '-force_key_frames', 'expr:gte(t,n_forced*2)',
+        '-sc_threshold', '0',
         '-b:v', '6000k',
         '-maxrate', '7500k',
         '-bufsize', '12000k',
@@ -168,6 +386,8 @@ function profileArgs(profile: PlaybackProfile) {
         '-c:v', 'libx264',
         '-preset', 'veryfast',
         '-tune', 'zerolatency',
+        '-force_key_frames', 'expr:gte(t,n_forced*2)',
+        '-sc_threshold', '0',
         '-b:v', '6500k',
         '-maxrate', '8500k',
         '-bufsize', '13000k',
@@ -182,12 +402,24 @@ function profileArgs(profile: PlaybackProfile) {
         '-preset', 'veryfast',
         '-tune', 'zerolatency',
         '-r', '60',
+        '-g', '120',
+        '-keyint_min', '120',
+        '-sc_threshold', '0',
         '-b:v', '5000k',
         '-maxrate', '6500k',
         '-bufsize', '10000k',
         '-c:a', 'aac',
         '-b:a', '160k',
       ]
+    case 'hardware_smooth_720p60':
+      return hardwareFilteredH264Args(
+        backend,
+        'scale=-2:720:flags=lanczos,minterpolate=fps=60:mi_mode=mci:mc_mode=aobmc:me_mode=bidir',
+        '5000k',
+        '6500k',
+        '10000k',
+        '160k'
+      )
     case 'smooth_1080p60':
       return [
         '-map', '0:v:0?', '-map', '0:a:0?',
@@ -196,6 +428,9 @@ function profileArgs(profile: PlaybackProfile) {
         '-preset', 'veryfast',
         '-tune', 'zerolatency',
         '-r', '60',
+        '-g', '120',
+        '-keyint_min', '120',
+        '-sc_threshold', '0',
         '-b:v', '8500k',
         '-maxrate', '10000k',
         '-bufsize', '17000k',
@@ -210,28 +445,62 @@ function profileArgs(profile: PlaybackProfile) {
         '-preset', 'veryfast',
         '-tune', 'zerolatency',
         '-r', '60',
+        '-g', '120',
+        '-keyint_min', '120',
+        '-sc_threshold', '0',
         '-b:v', '5500k',
         '-maxrate', '7000k',
         '-bufsize', '11000k',
         '-c:a', 'aac',
         '-b:a', '160k',
       ]
+    case 'hardware_sports_720p60':
+      return hardwareFilteredH264Args(
+        backend,
+        'yadif=mode=send_frame:parity=auto:deint=interlaced,scale=-2:720:flags=lanczos,unsharp=5:5:0.35:3:3:0.2,minterpolate=fps=60:mi_mode=mci:mc_mode=aobmc:me_mode=bidir',
+        '5500k',
+        '7000k',
+        '11000k',
+        '160k'
+      )
     default:
       return ['-map', '0:v:0?', '-map', '0:a:0?', '-c', 'copy']
   }
 }
 
-function spawnFfmpeg(sourceUrl: string, outputDir: string, profile: PlaybackProfile) {
-  const args = [
+function ffmpegArgs(sourceUrl: string, outputDir: string, profile: PlaybackProfile, backend: Exclude<HardwareBackend, 'auto'>) {
+  return [
     '-hide_banner',
     '-loglevel', 'warning',
     '-nostdin',
     '-fflags', '+genpts',
+    ...threadingArgs(),
     ...inputArgs(sourceUrl),
-    ...profileArgs(profile),
+    ...profileArgs(profile, backend),
     ...hlsArgs(outputDir),
   ]
+}
+
+function spawnFfmpeg(args: string[]) {
   return spawn(process.env.FFMPEG_PATH || 'ffmpeg', args, { stdio: ['ignore', 'pipe', 'pipe'] })
+}
+
+function processStats(pid: number | undefined) {
+  if (!pid) return { cpuPercent: null, memoryPercent: null }
+
+  try {
+    const output = execFileSync('ps', ['-p', String(pid), '-o', '%cpu=', '-o', '%mem='], {
+      encoding: 'utf8',
+      timeout: 1000,
+    }).trim()
+    const [cpu, memory] = output.split(/\s+/).map(value => parseFloat(value))
+    return {
+      cpuPercent: Number.isFinite(cpu) ? cpu : null,
+      memoryPercent: Number.isFinite(memory) ? memory : null,
+    }
+  } catch {
+    return { cpuPercent: null, memoryPercent: null }
+  }
 }
 
 function stopSession(key: string) {
@@ -250,6 +519,7 @@ setInterval(() => {
 
 function waitForPlaylist(session: Session) {
   const startedAt = Date.now()
+  const startupTimeout = startupTimeoutFor(session.profile)
   return new Promise<void>((resolve, reject) => {
     const check = () => {
       if (fs.existsSync(session.playlistPath)) {
@@ -260,8 +530,9 @@ function waitForPlaylist(session: Session) {
         reject(new Error(session.lastError || `FFmpeg exited with code ${session.process.exitCode}`))
         return
       }
-      if (Date.now() - startedAt > STARTUP_TIMEOUT_MS) {
-        reject(new Error('Timed out waiting for FFmpeg HLS playlist'))
+      if (Date.now() - startedAt > startupTimeout) {
+        stopSession(session.key)
+        reject(new Error(`Timed out waiting for FFmpeg HLS playlist for ${session.profile}${session.lastError ? `: ${session.lastError}` : ''}`))
         return
       }
       setTimeout(check, 250)
@@ -272,23 +543,29 @@ function waitForPlaylist(session: Session) {
 
 export async function ensureTranscodeSession(channel: Channel, playlist: Playlist) {
   const profile = normalizePlaybackProfile(playlist.playbackProfile)
-  const key = sessionKey(channel.id, profile)
+  const backend = resolvedHardwareBackend(playlist.transcodeBackend)
+  const key = sessionKey(channel.id, profile, backend)
   const existing = sessions.get(key)
   if (existing && existing.process.exitCode === null) {
     existing.lastAccessedAt = Date.now()
+    console.log(`[transcode] reuse channel=${channel.id} name="${channel.displayName}" profile=${profile} backend=${backend} pid=${existing.process.pid ?? 'unknown'}`)
     await waitForPlaylist(existing)
     return existing
   }
 
   if (existing) sessions.delete(key)
 
-  const outputDir = path.join(transcodeRoot(), String(channel.id), profile)
+  const outputDir = path.join(transcodeRoot(), String(channel.id), profile, backend)
   emptyDirectory(outputDir)
-  const process = spawnFfmpeg(channel.streamUrl, outputDir, profile)
+  const args = ffmpegArgs(channel.streamUrl, outputDir, profile, backend)
+  console.log(`[transcode] start channel=${channel.id} name="${channel.displayName}" playlist=${playlist.id} profile=${profile} backend=${backend} requestedBackend=${playlist.transcodeBackend ?? 'auto'} threads=${transcodeThreads() || 'auto'} output=${outputDir}`)
+  console.log(`[transcode] ffmpeg channel=${channel.id} args=${summarizeArgs(args)}`)
+  const process = spawnFfmpeg(args)
   const session: Session = {
     key,
     channelId: channel.id,
     profile,
+    backend,
     sourceUrl: channel.streamUrl,
     outputDir,
     playlistPath: path.join(outputDir, 'index.m3u8'),
@@ -298,12 +575,15 @@ export async function ensureTranscodeSession(channel: Channel, playlist: Playlis
     lastError: null,
   }
   sessions.set(key, session)
+  console.log(`[transcode] spawned channel=${channel.id} profile=${profile} backend=${backend} pid=${process.pid ?? 'unknown'}`)
 
   process.stderr.on('data', (chunk: Buffer) => {
     const message = chunk.toString().trim()
     if (message) session.lastError = message.slice(-2000)
   })
-  process.on('exit', () => {
+  process.on('exit', (code, signal) => {
+    const runtimeMs = Date.now() - session.startedAt
+    console.log(`[transcode] exit channel=${channel.id} name="${channel.displayName}" profile=${profile} backend=${backend} pid=${process.pid ?? 'unknown'} code=${code ?? 'null'} signal=${signal ?? 'null'} runtimeMs=${runtimeMs}${session.lastError ? ` lastError=${session.lastError}` : ''}`)
     if (sessions.get(key) === session) sessions.delete(key)
   })
 
@@ -311,12 +591,13 @@ export async function ensureTranscodeSession(channel: Channel, playlist: Playlis
   return session
 }
 
-export function getTranscodeFilePath(channelId: number, profileValue: string | null | undefined, filePath: string[]) {
+export function getTranscodeFilePath(channelId: number, profileValue: string | null | undefined, backendValue: string | null | undefined, filePath: string[]) {
   const profile = normalizePlaybackProfile(profileValue)
+  const backend = resolvedHardwareBackend(backendValue)
   const safeParts = filePath.filter(part => part && part !== '.' && part !== '..' && !part.includes('/') && !part.includes('\\'))
   const relativePath = safeParts.length > 0 ? safeParts.join(path.sep) : 'index.m3u8'
-  const fullPath = path.join(transcodeRoot(), String(channelId), profile, relativePath)
-  const root = path.join(transcodeRoot(), String(channelId), profile)
+  const fullPath = path.join(transcodeRoot(), String(channelId), profile, backend, relativePath)
+  const root = path.join(transcodeRoot(), String(channelId), profile, backend)
   if (fullPath !== root && !fullPath.startsWith(`${root}${path.sep}`)) throw new Error('Invalid transcode path')
   return fullPath
 }
@@ -325,10 +606,25 @@ export function listTranscodeSessions() {
   return Array.from(sessions.values()).map(session => ({
     channelId: session.channelId,
     profile: session.profile,
+    pid: session.process.pid ?? null,
     startedAt: new Date(session.startedAt).toISOString(),
     lastAccessedAt: new Date(session.lastAccessedAt).toISOString(),
     lastError: session.lastError,
     running: session.process.exitCode === null,
-    backend: resolvedHardwareBackend(),
+    backend: session.backend,
+    ...processStats(session.process.pid),
   }))
+}
+
+export function getTranscodeHardwareRecommendation() {
+  const backend = probeRecommendedHardwareBackend()
+  return {
+    backend,
+    encoder: process.env.TRANSCODE_RECOMMENDED_ENCODER ?? (backend === 'cpu' ? 'libx264' : encoderForBackend(backend)),
+    results: hardwareProbeResults,
+  }
+}
+
+export function runTranscodeHardwareProbe() {
+  return getTranscodeHardwareRecommendation()
 }

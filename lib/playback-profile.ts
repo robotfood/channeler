@@ -11,8 +11,10 @@ export const PLAYBACK_PROFILES = [
   'clean_1080p',
   'sharp_1080p',
   'smooth_720p60',
+  'hardware_smooth_720p60',
   'smooth_1080p60',
   'sports_720p60',
+  'hardware_sports_720p60',
 ] as const
 
 export type PlaybackProfile = typeof PLAYBACK_PROFILES[number]

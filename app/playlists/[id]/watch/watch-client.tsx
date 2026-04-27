@@ -81,7 +81,7 @@ export default function WatchClient({ initialData }: { initialData: PlaylistData
                 onClick={() => setPlayingChannel(ch)}
                 className={`w-full flex items-center gap-3 px-3 py-2 rounded transition-colors group text-left ${playingChannel?.id === ch.id ? 'bg-blue-50 dark:bg-blue-900/20 ring-1 ring-blue-200 dark:ring-blue-800/50' : 'hover:bg-gray-50 dark:hover:bg-gray-800'}`}
               >
-                <div className="relative w-8 h-8 shrink-0 flex items-center justify-center bg-gray-50 dark:bg-gray-800 rounded overflow-hidden">
+                <div className="relative w-10 h-8 shrink-0 flex items-center justify-center bg-gray-900 rounded overflow-hidden">
                   {ch.tvgLogo ? (
                     // eslint-disable-next-line @next/next/no-img-element
                     <img
@@ -126,6 +126,8 @@ export default function WatchClient({ initialData }: { initialData: PlaylistData
               title={playingChannel.displayName}
               channelId={playingChannel.id}
               bufferSize={initialData.bufferSize}
+              playbackProfile={initialData.playbackProfile}
+              proxyStreams={initialData.proxyStreams}
               url={channelPlaybackUrl(playingChannel.id, playingChannel.streamUrl, {
                 playbackProfile: initialData.playbackProfile,
                 proxyStreams: initialData.proxyStreams,

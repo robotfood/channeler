@@ -35,6 +35,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   if ('epgRefreshInterval' in body) updates.epgRefreshInterval = body.epgRefreshInterval
   if ('bufferSize' in body) updates.bufferSize = body.bufferSize
   if ('playbackProfile' in body) updates.playbackProfile = body.playbackProfile
+  if ('transcodeBackend' in body) updates.transcodeBackend = body.transcodeBackend
   if ('proxyStreams' in body) updates.proxyStreams = body.proxyStreams
   if ('proxyEpg' in body) updates.proxyEpg = body.proxyEpg
   if ('epgSourceType' in body) updates.epgSourceType = body.epgSourceType
