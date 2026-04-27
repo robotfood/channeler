@@ -1,4 +1,4 @@
-import { asc, desc, eq, sql } from 'drizzle-orm'
+import { and, asc, desc, eq, sql } from 'drizzle-orm'
 import { db } from '@/lib/db'
 import { channels, groups, playlists, refreshLog, settings } from '@/lib/schema'
 
@@ -74,6 +74,24 @@ export async function getPlaylistData(playlistId: number) {
   ])
 
   return { ...playlist, groups: playlistGroups, channels: playlistChannels }
+}
+
+export async function getFavoriteChannels() {
+  return await db.select({
+    id: channels.id,
+    displayName: channels.displayName,
+    streamUrl: channels.streamUrl,
+    tvgLogo: channels.tvgLogo,
+    playlistId: channels.playlistId,
+    proxyStreams: playlists.proxyStreams,
+  })
+    .from(channels)
+    .innerJoin(playlists, eq(channels.playlistId, playlists.id))
+    .where(and(
+      eq(channels.isFavorite, true),
+      eq(channels.isDeleted, false),
+      eq(channels.enabled, true)
+    ))
 }
 
 export async function getSettingsData() {

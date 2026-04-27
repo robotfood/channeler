@@ -29,6 +29,10 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     updates.isDeleted = body.isDeleted
     await writeDelta(channel.playlistId, { type: 'channel_deleted', channelKey: key, isDeleted: body.isDeleted })
   }
+  if ('isFavorite' in body) {
+    updates.isFavorite = body.isFavorite
+    await writeDelta(channel.playlistId, { type: 'channel_favorite', channelKey: key, isFavorite: body.isFavorite })
+  }
 
   await db.update(channels).set(updates).where(eq(channels.id, channelId))
   return NextResponse.json({ ok: true })

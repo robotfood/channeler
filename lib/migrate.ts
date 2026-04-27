@@ -47,6 +47,7 @@ export function runMigrations() {
       stream_url TEXT NOT NULL,
       enabled INTEGER NOT NULL DEFAULT 1,
       is_deleted INTEGER NOT NULL DEFAULT 0,
+      is_favorite INTEGER NOT NULL DEFAULT 0,
       sort_order INTEGER NOT NULL DEFAULT 0
     );
 
@@ -89,6 +90,7 @@ export function runMigrations() {
   try { sqlite.exec(`ALTER TABLE playlists ADD COLUMN xtream_output TEXT`) } catch {}
   try { sqlite.exec(`ALTER TABLE channels ADD COLUMN channel_source_key TEXT`) } catch {}
   try { sqlite.exec(`ALTER TABLE channels ADD COLUMN is_deleted INTEGER NOT NULL DEFAULT 0`) } catch {}
+  try { sqlite.exec(`ALTER TABLE channels ADD COLUMN is_favorite INTEGER NOT NULL DEFAULT 0`) } catch {}
 
   // Populate slugs for existing playlists that don't have one
   const rows = sqlite.prepare(`SELECT id, name FROM playlists WHERE slug = '' OR slug IS NULL`).all() as { id: number; name: string }[]

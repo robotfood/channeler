@@ -42,6 +42,7 @@ export const channels = sqliteTable('channels', {
   streamUrl: text('stream_url').notNull(),
   enabled: integer('enabled', { mode: 'boolean' }).notNull().default(true),
   isDeleted: integer('is_deleted', { mode: 'boolean' }).notNull().default(false),
+  isFavorite: integer('is_favorite', { mode: 'boolean' }).notNull().default(false),
   sortOrder: integer('sort_order').notNull().default(0),
 })
 

@@ -10,6 +10,7 @@ export type Delta =
   | { type: 'channel_rename'; channelKey: string; displayName: string }
   | { type: 'channel_enabled'; channelKey: string; enabled: boolean }
   | { type: 'channel_deleted'; channelKey: string; isDeleted: boolean }
+  | { type: 'channel_favorite'; channelKey: string; isFavorite: boolean }
 
 export function legacyChannelKey(c: { tvgId: string | null; tvgName: string | null; displayName: string }): string {
   return c.tvgId || c.tvgName || c.displayName
@@ -36,6 +37,7 @@ export async function applyDeltas(playlistId: number) {
   const channelRenames = new Map<string, string>()
   const channelEnabled = new Map<string, boolean>()
   const channelDeleted = new Map<string, boolean>()
+  const channelFavorite = new Map<string, boolean>()
 
   for (const row of rows) {
     const d = JSON.parse(row.payload) as Delta
@@ -47,6 +49,7 @@ export async function applyDeltas(playlistId: number) {
       case 'channel_rename': channelRenames.set(d.channelKey, d.displayName); break
       case 'channel_enabled':channelEnabled.set(d.channelKey, d.enabled); break
       case 'channel_deleted':channelDeleted.set(d.channelKey, d.isDeleted); break
+      case 'channel_favorite':channelFavorite.set(d.channelKey, d.isFavorite); break
     }
   }
 
@@ -101,5 +104,10 @@ export async function applyDeltas(playlistId: number) {
   for (const [key, isDeleted] of channelDeleted) {
     const c = channelByKey.get(key)
     if (c) await db.update(channels).set({ isDeleted }).where(eq(channels.id, c.id))
+  }
+
+  for (const [key, isFavorite] of channelFavorite) {
+    const c = channelByKey.get(key)
+    if (c) await db.update(channels).set({ isFavorite }).where(eq(channels.id, c.id))
   }
 }
