@@ -108,9 +108,10 @@ export default function SettingsClient({ initialData }: { initialData: SettingsD
                 <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
                   {log.map(entry => (
                     <tr key={entry.id} className="text-gray-700 dark:text-gray-300">
-                      <td className="py-2 pr-4 text-xs text-gray-400 dark:text-gray-500 whitespace-nowrap">
+                      <td className="py-2 pr-4 text-xs text-gray-400 dark:text-gray-500 whitespace-nowrap" suppressHydrationWarning>
                         {new Date(entry.createdAt).toLocaleString()}
                       </td>
+
                       <td className="py-2 pr-4 truncate max-w-32">{entry.playlistName ?? '—'}</td>
                       <td className="py-2 pr-4 uppercase text-xs">{entry.type}</td>
                       <td className="py-2 pr-4 text-xs text-gray-400 dark:text-gray-500">{entry.triggeredBy}</td>

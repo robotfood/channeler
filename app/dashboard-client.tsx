@@ -142,7 +142,7 @@ export default function DashboardClient({ initialPlaylists, favorites: initialFa
                   <div className="flex gap-4 mt-1 text-sm text-gray-500 dark:text-gray-400">
                     <span>{p.channelEnabled} / {p.channelTotal} channels enabled</span>
                     <span>{p.groupCount} groups</span>
-                    {p.m3uLastFetchedAt && <span>Updated {new Date(p.m3uLastFetchedAt).toLocaleString()}</span>}
+                    {p.m3uLastFetchedAt && <span suppressHydrationWarning>Updated {new Date(p.m3uLastFetchedAt).toLocaleString()}</span>}
                   </div>
                   <div className="mt-3 space-y-1">
                     <UrlRow label="M3U" url={`http://${host}/api/output/${p.slug}/m3u`} />
