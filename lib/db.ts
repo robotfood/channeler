@@ -11,6 +11,13 @@ const sqlite = new DatabaseSync(dbPath, { timeout: 10000 })
 sqlite.exec('PRAGMA journal_mode = WAL')
 sqlite.exec('PRAGMA foreign_keys = ON')
 
+function ensureRuntimeColumns() {
+  try { sqlite.exec(`ALTER TABLE playlists ADD COLUMN buffer_size TEXT NOT NULL DEFAULT 'medium'`) } catch {}
+  try { sqlite.exec(`ALTER TABLE playlists ADD COLUMN playback_profile TEXT NOT NULL DEFAULT 'direct'`) } catch {}
+}
+
+ensureRuntimeColumns()
+
 export const db = drizzle(
   async (sql, params, method) => {
     const stmt = sqlite.prepare(sql)

@@ -31,29 +31,32 @@ Open [http://localhost:3000](http://localhost:3000).
 
 If stream proxying is enabled and clients need to reach this app on your LAN or through a reverse proxy, set `PUBLIC_BASE_URL` to the externally reachable base URL so generated proxy stream URLs use the correct address.
 
-Server playback profiles that remux or transcode streams require FFmpeg. The Docker image uses a Debian slim runtime with FFmpeg plus Intel media packages for QSV. If you run the app outside Docker, install FFmpeg and make sure `ffmpeg` is on `PATH`, or set `FFMPEG_PATH=/path/to/ffmpeg`. QSV profiles assume the container can access Intel Quick Sync, usually by passing `/dev/dri` from the host into the container.
+Server playback profiles that remux or transcode streams require FFmpeg. The Docker image uses a Debian slim runtime with FFmpeg plus Intel media packages for QSV. If you run the app outside Docker, install FFmpeg and make sure `ffmpeg` is on `PATH`, or set `FFMPEG_PATH=/path/to/ffmpeg`. Hardware profiles use `TRANSCODE_BACKEND`: `auto`, `qsv`, `videotoolbox`, or `cpu`. QSV assumes the container can access Intel Quick Sync, usually by passing `/dev/dri` from the host into the container. On Apple hardware, use `videotoolbox`; FFmpeg exposes Apple hardware H.264 through VideoToolbox rather than a separate Metal encoder.
 
 ## Server playback profiles
 
 Playback profiles control whether clients receive the original stream, a proxied stream, or a server-generated HLS stream. Any mode except Direct routes video through Channeler.
 
-| Profile | What it does | CPU load | GPU load | Best use |
-|---|---|---:|---:|---|
-| Direct source | Sends clients to the provider URL directly | None | None | Lowest latency and no server work |
-| Proxy passthrough | Proxies the original stream through Channeler | Very low | None | VPN routing, hiding provider URL, connection sharing |
-| Stable HLS remux | Uses FFmpeg to repackage into local HLS without re-encoding when possible | Low | None | Better stability and client compatibility with minimal quality loss |
-| Transcode 720p | CPU transcodes to H.264/AAC 720p HLS | Medium | None | Weak clients, lower bandwidth, normalizing odd streams |
-| Transcode 1080p | CPU transcodes to H.264/AAC 1080p HLS | High | None | Client compatibility at higher resolution |
-| QSV 720p | Intel Quick Sync H.264 encode to 720p HLS | Low to medium | Medium | Hardware-assisted 720p transcode |
-| QSV 1080p | Intel Quick Sync H.264 encode to 1080p HLS | Medium | Medium to high | Hardware-assisted 1080p transcode |
-| Enhanced 1080p | Deinterlaces, scales, sharpens, then CPU transcodes | High | None | General quality improvement for soft/interlaced channels |
-| Clean 1080p | Deinterlaces, denoises, lightly sharpens, then CPU transcodes | High | None | Noisy or blocky low-bitrate channels |
-| Sharp 1080p | Deinterlaces, scales, stronger sharpening, then CPU transcodes | High | None | Soft SD/720p channels that need edge detail |
-| Smooth 720p60 | CPU motion interpolation to 60 fps at 720p | Very high | None | Testing smoother motion with lower resolution |
-| Smooth 1080p60 | CPU motion interpolation to 60 fps at 1080p | Extreme | None | Only if the server has enough CPU headroom |
-| Sports 720p60 | Deinterlaces, sharpens, and interpolates to 60 fps at 720p | Very high | None | Sports channels where smoother motion matters |
+| Profile | What it does | Ideal buffer | CPU load | GPU load | Best use |
+|---|---|---|---:|---:|---|
+| Direct source | Sends clients to the provider URL directly | Medium | None | None | Lowest latency and no server work |
+| Proxy passthrough | Proxies the original stream through Channeler | Medium | Very low | None | VPN routing, hiding provider URL, connection sharing |
+| Stable HLS remux | Uses FFmpeg to repackage into local HLS without re-encoding when possible | Large | Low | None | Better stability and client compatibility with minimal quality loss |
+| Transcode 720p | CPU transcodes to H.264/AAC 720p HLS | Large | Medium | None | Weak clients, lower bandwidth, normalizing odd streams |
+| Transcode 1080p | CPU transcodes to H.264/AAC 1080p HLS | Large | High | None | Client compatibility at higher resolution |
+| Hardware 720p | Hardware H.264 encode to 720p HLS using QSV, Apple VideoToolbox, or CPU fallback | Large | Low to medium | Medium | Hardware-assisted 720p transcode |
+| Hardware 1080p | Hardware H.264 encode to 1080p HLS using QSV, Apple VideoToolbox, or CPU fallback | Large | Medium | Medium to high | Hardware-assisted 1080p transcode |
+| Hardware 4K | Hardware H.264 encode to 2160p HLS using QSV, Apple VideoToolbox, or CPU fallback | XL | Medium to high | High | Experimental 4K output for capable local clients |
+| Enhanced 1080p | Deinterlaces, scales, sharpens, then CPU transcodes | Large | High | None | General quality improvement for soft/interlaced channels |
+| Clean 1080p | Deinterlaces, denoises, lightly sharpens, then CPU transcodes | Large | High | None | Noisy or blocky low-bitrate channels |
+| Sharp 1080p | Deinterlaces, scales, stronger sharpening, then CPU transcodes | Large | High | None | Soft SD/720p channels that need edge detail |
+| Smooth 720p60 | CPU motion interpolation to 60 fps at 720p | XL | Very high | None | Testing smoother motion with lower resolution |
+| Smooth 1080p60 | CPU motion interpolation to 60 fps at 1080p | XL | Extreme | None | Only if the server has enough CPU headroom |
+| Sports 720p60 | Deinterlaces, sharpens, and interpolates to 60 fps at 720p | XL | Very high | None | Sports channels where smoother motion matters |
 
-On the Xeon E3-1245 v6 / Intel HD Graphics P630, start with Stable HLS, QSV 720p, and Enhanced 1080p. Treat Smooth 1080p60 as experimental because motion interpolation is CPU-heavy.
+On the Xeon E3-1245 v6 / Intel HD Graphics P630, start with Stable HLS, Hardware 720p, and Enhanced 1080p. Treat Hardware 4K and Smooth 1080p60 as experimental because they can be bandwidth-heavy or CPU-heavy depending on the stream.
+
+The buffer setting controls the steady-state playback buffer, not a long startup wait. The player starts close to the live edge and then fills the selected buffer size in the background. Server-generated HLS uses short 2-second segments to reduce channel-change delay while still allowing larger buffers for unstable or CPU-heavy profiles.
 
 ## Data storage
 
@@ -97,6 +100,18 @@ Runs on [http://localhost:3000](http://localhost:3000). Data is stored in `./dat
 | `PORT` | `3000` | Port to listen on |
 | `PUBLIC_BASE_URL` | unset | External base URL used when generating proxied stream URLs, e.g. `http://your-server:3000` |
 | `FFMPEG_PATH` | `ffmpeg` | FFmpeg binary used by server playback profiles |
+| `TRANSCODE_BACKEND` | `auto` | Hardware profile backend: `auto`, `qsv`, `videotoolbox`, or `cpu`. `auto` uses VideoToolbox on macOS and QSV elsewhere |
+
+### Transcode backends
+
+`TRANSCODE_BACKEND` only affects Hardware playback profiles. CPU-only profiles such as Enhanced, Clean, Sharp, and Smooth still use FFmpeg software filters and `libx264`.
+
+| Backend | What it uses | Best for | Notes |
+|---|---|---|---|
+| `auto` | VideoToolbox on macOS, QSV elsewhere | Default deployments | Picks the likely hardware encoder for the host OS |
+| `qsv` | Intel Quick Sync via FFmpeg `h264_qsv` | Intel iGPU servers and Unraid hosts with `/dev/dri` passed through | Best match for Xeon E3-1245 v6 / Intel P630 |
+| `videotoolbox` | Apple VideoToolbox via FFmpeg `h264_videotoolbox` | macOS hosts and Apple Silicon | This is the practical Apple hardware encoder path; it is not exposed as a separate Metal encoder in FFmpeg |
+| `cpu` | FFmpeg `libx264` software encoding | Debugging or hosts without hardware encoder access | Most compatible, but highest CPU usage |
 
 ## Xtream Integration Test
 

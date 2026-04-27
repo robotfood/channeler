@@ -27,5 +27,7 @@ Set up a GitHub Actions workflow that triggers on push to `main`:
 - [x] Add optional 60fps motion interpolation playback profiles
 - [x] Add clean/sharp/sports non-AI enhancement playback profiles
 - [x] Add Intel QSV H.264 playback profiles
+- [x] Add hardware backend selection for Intel QSV and Apple VideoToolbox
+- [x] Add experimental hardware 4K playback profile
 - [ ] Add hardware-accelerated VAAPI transcode mode and host capability checks
 - [ ] Add transcode session dashboard with current process/client health

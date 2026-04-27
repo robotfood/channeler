@@ -30,19 +30,80 @@ const INTERVALS = [
 ]
 
 const PLAYBACK_PROFILES = [
-  { value: 'direct', label: 'Direct source' },
-  { value: 'proxy', label: 'Proxy passthrough' },
-  { value: 'stable_hls', label: 'Stable HLS remux' },
-  { value: 'transcode_720p', label: 'Transcode 720p' },
-  { value: 'transcode_1080p', label: 'Transcode 1080p' },
-  { value: 'qsv_720p', label: 'QSV 720p' },
-  { value: 'qsv_1080p', label: 'QSV 1080p' },
-  { value: 'enhanced_1080p', label: 'Enhanced 1080p' },
-  { value: 'clean_1080p', label: 'Clean 1080p' },
-  { value: 'sharp_1080p', label: 'Sharp 1080p' },
-  { value: 'smooth_720p60', label: 'Smooth 720p60' },
-  { value: 'smooth_1080p60', label: 'Smooth 1080p60' },
-  { value: 'sports_720p60', label: 'Sports 720p60' },
+  {
+    value: 'proxy',
+    label: 'Proxy passthrough',
+    detail: 'Routes the original stream through this server without changing video quality. Ideal buffer: medium.',
+  },
+  {
+    value: 'stable_hls',
+    label: 'Stable HLS remux',
+    detail: 'Repackages the source into local HLS segments for steadier playback, without re-encoding. Ideal buffer: large.',
+  },
+  {
+    value: 'transcode_720p',
+    label: 'Transcode 720p',
+    detail: 'CPU transcodes to 720p HLS for broad client compatibility and lower bandwidth. Ideal buffer: large.',
+  },
+  {
+    value: 'transcode_1080p',
+    label: 'Transcode 1080p',
+    detail: 'CPU transcodes to 1080p HLS for compatibility while preserving more detail. Ideal buffer: large.',
+  },
+  {
+    value: 'qsv_720p',
+    label: 'Hardware 720p',
+    detail: 'Uses the configured hardware encoder, Intel QSV or Apple VideoToolbox, to produce 720p HLS. Ideal buffer: large.',
+  },
+  {
+    value: 'qsv_1080p',
+    label: 'Hardware 1080p',
+    detail: 'Uses the configured hardware encoder, Intel QSV or Apple VideoToolbox, to produce 1080p HLS. Ideal buffer: large.',
+  },
+  {
+    value: 'qsv_4k',
+    label: 'Hardware 4K',
+    detail: 'Uses the configured hardware encoder to upscale or normalize streams to 2160p HLS. Experimental and bandwidth-heavy. Ideal buffer: xl.',
+  },
+  {
+    value: 'enhanced_1080p',
+    label: 'Enhanced 1080p',
+    detail: 'CPU deinterlaces, scales, and lightly sharpens to improve soft or interlaced feeds. Ideal buffer: large.',
+  },
+  {
+    value: 'clean_1080p',
+    label: 'Clean 1080p',
+    detail: 'Adds denoise plus mild sharpening for low-bitrate streams with compression noise. Ideal buffer: large.',
+  },
+  {
+    value: 'sharp_1080p',
+    label: 'Sharp 1080p',
+    detail: 'Applies stronger sharpening for soft sources; best tested per playlist. Ideal buffer: large.',
+  },
+  {
+    value: 'smooth_720p60',
+    label: 'Smooth 720p60',
+    detail: 'Interpolates motion to 60 FPS at 720p. CPU intensive, useful for sports and news. Ideal buffer: xl.',
+  },
+  {
+    value: 'smooth_1080p60',
+    label: 'Smooth 1080p60',
+    detail: 'Interpolates motion to 60 FPS at 1080p. Very CPU intensive. Ideal buffer: xl.',
+  },
+  {
+    value: 'sports_720p60',
+    label: 'Sports 720p60',
+    detail: 'Combines deinterlace, sharpening, and 60 FPS interpolation tuned for sports feeds. Ideal buffer: xl.',
+  },
+]
+
+type PlaybackProfileValue = typeof PLAYBACK_PROFILES[number]['value']
+
+const TRANSCODE_BACKENDS = [
+  { name: 'auto', detail: 'Uses Apple VideoToolbox on macOS and Intel QSV everywhere else.' },
+  { name: 'qsv', detail: 'Uses Intel Quick Sync through FFmpeg h264_qsv. Best for Intel iGPU servers with /dev/dri access.' },
+  { name: 'videotoolbox', detail: 'Uses Apple hardware encoding through FFmpeg h264_videotoolbox on macOS.' },
+  { name: 'cpu', detail: 'Forces libx264 software encoding. Most compatible, but uses the most CPU.' },
 ]
 
 export default function PlaylistSettingsClient({ initialData, playlistId }: {
@@ -65,11 +126,28 @@ export default function PlaylistSettingsClient({ initialData, playlistId }: {
   const [playbackProfile, setPlaybackProfile] = useState(
     initialData.playbackProfile === 'direct' && initialData.proxyStreams ? 'proxy' : initialData.playbackProfile ?? 'direct'
   )
+  const [proxyProfile, setProxyProfile] = useState<PlaybackProfileValue>(
+    playbackProfile === 'direct' ? 'proxy' : playbackProfile as PlaybackProfileValue
+  )
   const [proxyEpg, setProxyEpg] = useState(initialData.proxyEpg)
   const [saving, setSaving] = useState(false)
   const [toast, setToast] = useState('')
 
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(''), 3000) }
+  const useProxyPlayback = playbackProfile !== 'direct'
+
+  function selectDirectPlayback() {
+    setPlaybackProfile('direct')
+  }
+
+  function selectProxyPlayback() {
+    setPlaybackProfile(proxyProfile)
+  }
+
+  function selectProxyProfile(profile: PlaybackProfileValue) {
+    setProxyProfile(profile)
+    setPlaybackProfile(profile)
+  }
 
   async function save() {
     setSaving(true)
@@ -203,15 +281,60 @@ export default function PlaylistSettingsClient({ initialData, playlistId }: {
           )}
         </div>
 
-        <div className="flex flex-col gap-1">
-          <label htmlFor="playbackProfile" className="text-xs text-gray-500 dark:text-gray-400">Server Playback Profile</label>
-          <select id="playbackProfile" value={playbackProfile} onChange={e => setPlaybackProfile(e.target.value)}
-            className="w-full max-w-[240px] bg-gray-50 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded px-2 py-1 text-sm focus:outline-none focus:border-blue-500">
-            {PLAYBACK_PROFILES.map(profile => (
-              <option key={profile.value} value={profile.value}>{profile.label}</option>
-            ))}
-          </select>
-          <p className="text-[10px] text-gray-400 dark:text-gray-500">All modes except Direct route streams through this server. Transcode profiles require FFmpeg.</p>
+        <div className="space-y-3">
+          <div>
+            <h2 className="text-sm font-medium text-gray-800 dark:text-gray-200">Playback route</h2>
+            <p className="text-xs text-gray-500 dark:text-gray-500 mt-0.5">Choose whether clients connect to the source directly or receive a server-managed stream.</p>
+          </div>
+
+          <div className="grid gap-2 sm:grid-cols-2">
+            <label className={`flex cursor-pointer gap-3 rounded-md border p-3 transition-colors ${!useProxyPlayback ? 'border-blue-500 bg-blue-50 dark:bg-blue-950/30' : 'border-gray-200 bg-gray-50 hover:border-gray-300 dark:border-gray-800 dark:bg-gray-900 dark:hover:border-gray-700'}`}>
+              <input type="radio" name="playbackRoute" checked={!useProxyPlayback} onChange={selectDirectPlayback}
+                className="mt-1 border-gray-300 text-blue-600 focus:ring-blue-500 dark:border-gray-600" />
+              <span>
+                <span className="block text-sm font-medium text-gray-800 dark:text-gray-200">Direct source</span>
+                <span className="block text-xs leading-5 text-gray-500 dark:text-gray-500">Clients play the provider URL directly.</span>
+              </span>
+            </label>
+
+            <label className={`flex cursor-pointer gap-3 rounded-md border p-3 transition-colors ${useProxyPlayback ? 'border-blue-500 bg-blue-50 dark:bg-blue-950/30' : 'border-gray-200 bg-gray-50 hover:border-gray-300 dark:border-gray-800 dark:bg-gray-900 dark:hover:border-gray-700'}`}>
+              <input type="radio" name="playbackRoute" checked={useProxyPlayback} onChange={selectProxyPlayback}
+                className="mt-1 border-gray-300 text-blue-600 focus:ring-blue-500 dark:border-gray-600" />
+              <span>
+                <span className="block text-sm font-medium text-gray-800 dark:text-gray-200">Proxy through server</span>
+                <span className="block text-xs leading-5 text-gray-500 dark:text-gray-500">Clients receive a stream from this app.</span>
+              </span>
+            </label>
+          </div>
+
+          {useProxyPlayback && (
+            <fieldset className="space-y-2 rounded-lg border border-gray-200 bg-white p-3 dark:border-gray-800 dark:bg-gray-950/30">
+              <legend className="px-1 text-xs font-medium uppercase tracking-wide text-gray-400 dark:text-gray-500">Proxy mode</legend>
+              {PLAYBACK_PROFILES.map(profile => (
+                <label key={profile.value}
+                  className={`flex cursor-pointer gap-3 rounded-md border p-3 transition-colors ${playbackProfile === profile.value ? 'border-blue-500 bg-blue-50 dark:bg-blue-950/30' : 'border-gray-200 bg-gray-50 hover:border-gray-300 dark:border-gray-800 dark:bg-gray-900 dark:hover:border-gray-700'}`}>
+                  <input type="radio" name="proxyPlaybackProfile" value={profile.value} checked={playbackProfile === profile.value}
+                    onChange={() => selectProxyProfile(profile.value)}
+                    className="mt-1 border-gray-300 text-blue-600 focus:ring-blue-500 dark:border-gray-600" />
+                  <span>
+                    <span className="block text-sm font-medium text-gray-800 dark:text-gray-200">{profile.label}</span>
+                    <span className="block text-xs leading-5 text-gray-500 dark:text-gray-500">{profile.detail}</span>
+                  </span>
+                </label>
+              ))}
+              <div className="space-y-1 pt-1 text-[10px] leading-4 text-gray-400 dark:text-gray-500">
+                <p>Transcode, enhancement, and 60 FPS modes require FFmpeg. Hardware modes use TRANSCODE_BACKEND.</p>
+                <dl className="grid gap-x-3 gap-y-1 sm:grid-cols-[auto_1fr]">
+                  {TRANSCODE_BACKENDS.map(backend => (
+                    <div key={backend.name} className="contents">
+                      <dt className="font-medium text-gray-500 dark:text-gray-400">{backend.name}</dt>
+                      <dd>{backend.detail}</dd>
+                    </div>
+                  ))}
+                </dl>
+              </div>
+            </fieldset>
+          )}
         </div>
 
         <div className="flex flex-col gap-1 pl-6">

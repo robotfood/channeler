@@ -19,11 +19,17 @@ interface EpgData {
   stop: string
 }
 
-const BUFFER_CONFIGS: Record<string, { backBufferLength: number, maxBufferLength: number }> = {
-  small:  { backBufferLength: 30,  maxBufferLength: 60  },
-  medium: { backBufferLength: 90,  maxBufferLength: 120 },
-  large:  { backBufferLength: 180, maxBufferLength: 240 },
-  xl:     { backBufferLength: 300, maxBufferLength: 600 },
+const BUFFER_CONFIGS: Record<string, {
+  backBufferLength: number
+  maxBufferLength: number
+  maxMaxBufferLength: number
+  liveSyncDurationCount: number
+  liveMaxLatencyDurationCount: number
+}> = {
+  small:  { backBufferLength: 15,  maxBufferLength: 30,  maxMaxBufferLength: 60,  liveSyncDurationCount: 1, liveMaxLatencyDurationCount: 3 },
+  medium: { backBufferLength: 30,  maxBufferLength: 60,  maxMaxBufferLength: 120, liveSyncDurationCount: 1, liveMaxLatencyDurationCount: 4 },
+  large:  { backBufferLength: 60,  maxBufferLength: 120, maxMaxBufferLength: 240, liveSyncDurationCount: 2, liveMaxLatencyDurationCount: 5 },
+  xl:     { backBufferLength: 120, maxBufferLength: 240, maxMaxBufferLength: 600, liveSyncDurationCount: 2, liveMaxLatencyDurationCount: 6 },
 }
 
 export default function ChannelPlayer({ url, title, channelId, bufferSize = 'medium', onClose }: Props) {
@@ -122,8 +128,13 @@ export default function ChannelPlayer({ url, title, channelId, bufferSize = 'med
       const hls = new Hls({
         enableWorker: true,
         lowLatencyMode: true,
+        startFragPrefetch: true,
         backBufferLength: config.backBufferLength,
         maxBufferLength: config.maxBufferLength,
+        maxMaxBufferLength: config.maxMaxBufferLength,
+        maxBufferHole: 0.5,
+        liveSyncDurationCount: config.liveSyncDurationCount,
+        liveMaxLatencyDurationCount: config.liveMaxLatencyDurationCount,
         manifestLoadingMaxRetry: 10,
         levelLoadingMaxRetry: 10,
       })

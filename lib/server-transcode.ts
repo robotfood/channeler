@@ -24,6 +24,21 @@ type Session = {
 const IDLE_TIMEOUT_MS = 90_000
 const STARTUP_TIMEOUT_MS = 15_000
 const sessions = new Map<string, Session>()
+const HARDWARE_BACKENDS = ['auto', 'qsv', 'videotoolbox', 'cpu'] as const
+
+type HardwareBackend = typeof HARDWARE_BACKENDS[number]
+
+function hardwareBackend(): HardwareBackend {
+  const value = process.env.TRANSCODE_BACKEND?.toLowerCase()
+  if (HARDWARE_BACKENDS.includes(value as HardwareBackend)) return value as HardwareBackend
+  return 'auto'
+}
+
+function resolvedHardwareBackend() {
+  const backend = hardwareBackend()
+  if (backend === 'auto') return process.platform === 'darwin' ? 'videotoolbox' : 'qsv'
+  return backend
+}
 
 function transcodeRoot() {
   const root = path.join(dataPath, 'transcode-cache')
@@ -53,11 +68,56 @@ function inputArgs(sourceUrl: string) {
 function hlsArgs(outputDir: string) {
   return [
     '-f', 'hls',
-    '-hls_time', '4',
-    '-hls_list_size', '8',
+    '-hls_time', '2',
+    '-hls_list_size', '10',
     '-hls_flags', 'delete_segments+append_list+omit_endlist+program_date_time',
     '-hls_segment_filename', path.join(outputDir, 'segment_%06d.ts'),
     path.join(outputDir, 'index.m3u8'),
+  ]
+}
+
+function cpuH264Args(height: number, videoBitrate: string, maxrate: string, bufsize: string, audioBitrate: string) {
+  return [
+    '-map', '0:v:0?', '-map', '0:a:0?',
+    '-vf', `scale=-2:${height}:flags=lanczos,format=yuv420p`,
+    '-c:v', 'libx264',
+    '-preset', 'veryfast',
+    '-tune', 'zerolatency',
+    '-b:v', videoBitrate,
+    '-maxrate', maxrate,
+    '-bufsize', bufsize,
+    '-c:a', 'aac',
+    '-b:a', audioBitrate,
+  ]
+}
+
+function hardwareH264Args(height: number, videoBitrate: string, maxrate: string, bufsize: string, audioBitrate: string) {
+  const backend = resolvedHardwareBackend()
+  if (backend === 'cpu') return cpuH264Args(height, videoBitrate, maxrate, bufsize, audioBitrate)
+
+  if (backend === 'videotoolbox') {
+    return [
+      '-map', '0:v:0?', '-map', '0:a:0?',
+      '-vf', `scale=-2:${height}:flags=lanczos,format=yuv420p`,
+      '-c:v', 'h264_videotoolbox',
+      '-b:v', videoBitrate,
+      '-maxrate', maxrate,
+      '-bufsize', bufsize,
+      '-c:a', 'aac',
+      '-b:a', audioBitrate,
+    ]
+  }
+
+  return [
+    '-map', '0:v:0?', '-map', '0:a:0?',
+    '-vf', `scale=-2:${height}:flags=lanczos,format=nv12`,
+    '-c:v', 'h264_qsv',
+    '-preset', 'veryfast',
+    '-b:v', videoBitrate,
+    '-maxrate', maxrate,
+    '-bufsize', bufsize,
+    '-c:a', 'aac',
+    '-b:a', audioBitrate,
   ]
 }
 
@@ -66,55 +126,15 @@ function profileArgs(profile: PlaybackProfile) {
     case 'stable_hls':
       return ['-map', '0:v:0?', '-map', '0:a:0?', '-c', 'copy']
     case 'transcode_720p':
-      return [
-        '-map', '0:v:0?', '-map', '0:a:0?',
-        '-vf', 'scale=-2:720:flags=lanczos,format=yuv420p',
-        '-c:v', 'libx264',
-        '-preset', 'veryfast',
-        '-tune', 'zerolatency',
-        '-b:v', '3500k',
-        '-maxrate', '4200k',
-        '-bufsize', '7000k',
-        '-c:a', 'aac',
-        '-b:a', '128k',
-      ]
+      return cpuH264Args(720, '3500k', '4200k', '7000k', '128k')
     case 'transcode_1080p':
-      return [
-        '-map', '0:v:0?', '-map', '0:a:0?',
-        '-vf', 'scale=-2:1080:flags=lanczos,format=yuv420p',
-        '-c:v', 'libx264',
-        '-preset', 'veryfast',
-        '-tune', 'zerolatency',
-        '-b:v', '6000k',
-        '-maxrate', '7200k',
-        '-bufsize', '12000k',
-        '-c:a', 'aac',
-        '-b:a', '160k',
-      ]
+      return cpuH264Args(1080, '6000k', '7200k', '12000k', '160k')
     case 'qsv_720p':
-      return [
-        '-map', '0:v:0?', '-map', '0:a:0?',
-        '-vf', 'scale=-2:720:flags=lanczos,format=nv12',
-        '-c:v', 'h264_qsv',
-        '-preset', 'veryfast',
-        '-b:v', '3500k',
-        '-maxrate', '4200k',
-        '-bufsize', '7000k',
-        '-c:a', 'aac',
-        '-b:a', '128k',
-      ]
+      return hardwareH264Args(720, '3500k', '4200k', '7000k', '128k')
     case 'qsv_1080p':
-      return [
-        '-map', '0:v:0?', '-map', '0:a:0?',
-        '-vf', 'scale=-2:1080:flags=lanczos,format=nv12',
-        '-c:v', 'h264_qsv',
-        '-preset', 'veryfast',
-        '-b:v', '6000k',
-        '-maxrate', '7200k',
-        '-bufsize', '12000k',
-        '-c:a', 'aac',
-        '-b:a', '160k',
-      ]
+      return hardwareH264Args(1080, '6000k', '7200k', '12000k', '160k')
+    case 'qsv_4k':
+      return hardwareH264Args(2160, '14000k', '18000k', '28000k', '192k')
     case 'enhanced_1080p':
       return [
         '-map', '0:v:0?', '-map', '0:a:0?',
@@ -309,5 +329,6 @@ export function listTranscodeSessions() {
     lastAccessedAt: new Date(session.lastAccessedAt).toISOString(),
     lastError: session.lastError,
     running: session.process.exitCode === null,
+    backend: resolvedHardwareBackend(),
   }))
 }
