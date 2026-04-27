@@ -45,6 +45,7 @@ export default function PlaylistSettingsClient({ initialData, playlistId }: {
   const [autoRefresh, setAutoRefresh] = useState(initialData.autoRefresh)
   const [m3uRefreshInterval, setM3uRefreshInterval] = useState(initialData.m3uRefreshInterval ?? 24)
   const [epgRefreshInterval, setEpgRefreshInterval] = useState(initialData.epgRefreshInterval ?? 24)
+  const [bufferSize, setBufferSize] = useState(initialData.bufferSize ?? 'medium')
   const [proxyStreams, setProxyStreams] = useState(initialData.proxyStreams)
   const [proxyEpg, setProxyEpg] = useState(initialData.proxyEpg)
   const [saving, setSaving] = useState(false)
@@ -64,6 +65,7 @@ export default function PlaylistSettingsClient({ initialData, playlistId }: {
         autoRefresh,
         m3uRefreshInterval,
         epgRefreshInterval,
+        bufferSize,
         proxyStreams,
         proxyEpg,
         xtreamServerUrl: data.m3uSourceType === 'xtream' ? xtreamServerUrl || null : null,
@@ -186,6 +188,18 @@ export default function PlaylistSettingsClient({ initialData, playlistId }: {
           <input type="checkbox" id="proxyStreams" checked={proxyStreams} onChange={e => setProxyStreams(e.target.checked)}
             className="rounded border-gray-300 dark:border-gray-600 accent-blue-500" />
           <label htmlFor="proxyStreams" className="text-sm text-gray-700 dark:text-gray-300">Proxy streams through this server</label>
+        </div>
+
+        <div className="flex flex-col gap-1 pl-6">
+          <label htmlFor="bufferSize" className="text-xs text-gray-500 dark:text-gray-400">Playback Buffer</label>
+          <select id="bufferSize" value={bufferSize} onChange={e => setBufferSize(e.target.value)}
+            className="w-full max-w-[200px] bg-gray-50 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded px-2 py-1 text-sm focus:outline-none focus:border-blue-500">
+            <option value="small">Small (Fastest)</option>
+            <option value="medium">Medium (Balanced)</option>
+            <option value="large">Large (Stable)</option>
+            <option value="xl">XL (Maximum Stability)</option>
+          </select>
+          <p className="text-[10px] text-gray-400 dark:text-gray-500">Larger buffers reduce stutter but increase startup delay.</p>
         </div>
 
         <div className="flex items-center gap-2">

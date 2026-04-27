@@ -181,6 +181,7 @@ export default function DashboardClient({ initialPlaylists, favorites: initialFa
             <ChannelPlayer
               title={playingChannel.displayName}
               channelId={playingChannel.id}
+              bufferSize={playingChannel.bufferSize}
               url={playingChannel.proxyStreams ? `/api/stream/${playingChannel.id}` : playingChannel.streamUrl}
               onClose={() => setPlayingChannel(null)}
             />

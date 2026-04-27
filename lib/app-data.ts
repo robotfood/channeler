@@ -18,6 +18,9 @@ export async function getDashboardPlaylists() {
       epgSourceType: playlists.epgSourceType,
       epgLastFetchedAt: playlists.epgLastFetchedAt,
       autoRefresh: playlists.autoRefresh,
+      m3uRefreshInterval: playlists.m3uRefreshInterval,
+      epgRefreshInterval: playlists.epgRefreshInterval,
+      bufferSize: playlists.bufferSize,
       proxyStreams: playlists.proxyStreams,
       proxyEpg: playlists.proxyEpg,
       createdAt: playlists.createdAt,
@@ -99,6 +102,7 @@ export async function getFavoriteChannels() {
     tvgLogo: channels.tvgLogo,
     playlistId: channels.playlistId,
     proxyStreams: playlists.proxyStreams,
+    bufferSize: playlists.bufferSize,
   })
     .from(channels)
     .innerJoin(playlists, eq(channels.playlistId, playlists.id))

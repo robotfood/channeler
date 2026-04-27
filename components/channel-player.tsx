@@ -8,6 +8,7 @@ interface Props {
   url: string
   title: string
   channelId: number
+  bufferSize?: string
   onClose: () => void
 }
 
@@ -18,13 +19,22 @@ interface EpgData {
   stop: string
 }
 
-export default function ChannelPlayer({ url, title, channelId, onClose }: Props) {
+const BUFFER_CONFIGS: Record<string, { backBufferLength: number, maxBufferLength: number }> = {
+  small:  { backBufferLength: 30,  maxBufferLength: 60  },
+  medium: { backBufferLength: 90,  maxBufferLength: 120 },
+  large:  { backBufferLength: 180, maxBufferLength: 240 },
+  xl:     { backBufferLength: 300, maxBufferLength: 600 },
+}
+
+export default function ChannelPlayer({ url, title, channelId, bufferSize = 'medium', onClose }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null)
   const [error, setError] = useState<string | null>(null)
   const [epg, setEpg] = useState<EpgData | null>(null)
   const [loadingEpg, setLoadingEpg] = useState(false)
   const [isCasting, setIsCasting] = useState(false)
   const hlsRef = useRef<Hls | null>(null)
+  const retryCountRef = useRef(0)
+  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
     // Listen for Cast state changes
@@ -105,22 +115,36 @@ export default function ChannelPlayer({ url, title, channelId, onClose }: Props)
     if (!video) return
 
     setError(null)
+    retryCountRef.current = 0
+    const config = BUFFER_CONFIGS[bufferSize] || BUFFER_CONFIGS.medium
 
     if (Hls.isSupported()) {
       const hls = new Hls({
         enableWorker: true,
         lowLatencyMode: true,
-        backBufferLength: 90
+        backBufferLength: config.backBufferLength,
+        maxBufferLength: config.maxBufferLength,
+        manifestLoadingMaxRetry: 10,
+        levelLoadingMaxRetry: 10,
       })
       hlsRef.current = hls
       hls.loadSource(url)
       hls.attachMedia(video)
+      hls.on(Hls.Events.MANIFEST_PARSED, () => {
+        retryCountRef.current = 0
+        setError(null)
+      })
       hls.on(Hls.Events.ERROR, (_event, data) => {
         if (data.fatal) {
           switch (data.type) {
             case Hls.ErrorTypes.NETWORK_ERROR:
-              setError('Network error - check your stream URL or proxy settings')
-              hls.startLoad()
+              setError('Network error - attempting auto-reconnect...')
+              if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current)
+              reconnectTimerRef.current = setTimeout(() => {
+                retryCountRef.current += 1
+                hls.loadSource(url)
+                hls.startLoad()
+              }, Math.min(1000 * Math.pow(2, retryCountRef.current), 30000))
               break
             case Hls.ErrorTypes.MEDIA_ERROR:
               setError('Media error - trying to recover...')
@@ -141,12 +165,16 @@ export default function ChannelPlayer({ url, title, channelId, onClose }: Props)
     }
 
     return () => {
+      if (reconnectTimerRef.current) {
+        clearTimeout(reconnectTimerRef.current)
+        reconnectTimerRef.current = null
+      }
       if (hlsRef.current) {
         hlsRef.current.destroy()
         hlsRef.current = null
       }
     }
-  }, [url])
+  }, [url, bufferSize])
 
   return (
     <div className="flex flex-col h-full bg-black text-white overflow-hidden rounded-lg shadow-xl border border-gray-800">

@@ -124,6 +124,7 @@ export default function WatchClient({ initialData }: { initialData: PlaylistData
             <ChannelPlayer
               title={playingChannel.displayName}
               channelId={playingChannel.id}
+              bufferSize={initialData.bufferSize}
               url={initialData.proxyStreams ? `/api/stream/${playingChannel.id}` : playingChannel.streamUrl}
               onClose={() => setPlayingChannel(null)}
             />
