@@ -9,8 +9,9 @@ import { channelPlaybackUrl } from '@/lib/stream-url'
 type Channel = PlaylistData['channels'][number]
 
 export default function WatchClient({ initialData }: { initialData: PlaylistData }) {
-  const [selectedGroupId, setSelectedGroupId] = useState<number | null>(
-    initialData.groups.find(g => g.enabled)?.id ?? null
+  const [channels, setChannels] = useState(initialData.channels)
+  const [selectedGroupId, setSelectedGroupId] = useState<number | 'favorites' | null>(
+    initialData.groups.find(g => g.enabled)?.id ?? 'favorites'
   )
   const [playingChannel, setPlayingChannel] = useState<Channel | null>(null)
   const [groupEpg, setGroupEpg] = useState<Record<number, { title: string }>>({})
@@ -20,16 +21,44 @@ export default function WatchClient({ initialData }: { initialData: PlaylistData
   
   const filteredChannels = useMemo(() => {
     if (!selectedGroupId) return []
-    return initialData.channels.filter(c => 
-      c.groupId === selectedGroupId && 
+    const list = selectedGroupId === 'favorites'
+      ? channels.filter(c => c.isFavorite)
+      : channels.filter(c => c.groupId === selectedGroupId)
+
+    return list.filter(c => 
       c.enabled && 
       !c.isDeleted &&
       c.displayName.toLowerCase().includes(channelSearch.toLowerCase())
     )
-  }, [initialData.channels, selectedGroupId, channelSearch])
+  }, [channels, selectedGroupId, channelSearch])
+
+  async function toggleFavorite(e: React.MouseEvent, channelId: number) {
+    e.stopPropagation()
+    const ch = channels.find(c => c.id === channelId)
+    if (!ch) return
+    const newVal = !ch.isFavorite
+    
+    // Optimistic update
+    setChannels(prev => prev.map(c => c.id === channelId ? { ...c, isFavorite: newVal } : c))
+    if (playingChannel?.id === channelId) {
+      setPlayingChannel({ ...playingChannel, isFavorite: newVal })
+    }
+
+    try {
+      await fetch(`/api/channels/${channelId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ isFavorite: newVal }),
+      })
+    } catch (err) {
+      console.error('Failed to toggle favorite', err)
+      // Rollback
+      setChannels(prev => prev.map(c => c.id === channelId ? { ...c, isFavorite: newVal } : c))
+    }
+  }
 
   useEffect(() => {
-    if (!selectedGroupId) return
+    if (!selectedGroupId || selectedGroupId === 'favorites') return
     fetch(`/api/groups/${selectedGroupId}/epg`)
       .then(res => res.json())
       .then(setGroupEpg)
@@ -52,6 +81,16 @@ export default function WatchClient({ initialData }: { initialData: PlaylistData
             <span className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Categories</span>
           </div>
           <div className="flex-1 overflow-y-auto p-2 space-y-0.5">
+            <button
+              onClick={() => setSelectedGroupId('favorites')}
+              className={`w-full text-left px-3 py-2 rounded text-sm transition-colors flex items-center gap-2 ${selectedGroupId === 'favorites' ? 'bg-yellow-100 dark:bg-yellow-900/40 text-yellow-700 dark:text-yellow-300 font-medium' : 'hover:bg-gray-100 dark:hover:bg-gray-800 text-gray-600 dark:text-gray-400'}`}
+            >
+              <svg className="w-4 h-4 text-yellow-500" fill="currentColor" viewBox="0 0 24 24">
+                <path d="M12 17.27L18.18 21l-1.64-7.03L22 9.24l-7.19-.61L12 2 9.19 8.63 2 9.24l5.46 4.73L5.82 21z" />
+              </svg>
+              Favourites
+            </button>
+            <div className="h-px bg-gray-100 dark:bg-gray-800 my-1 mx-2" />
             {enabledGroups.map(g => (
               <button
                 key={g.id}
@@ -111,6 +150,26 @@ export default function WatchClient({ initialData }: { initialData: PlaylistData
                     </span>
                   )}
                 </div>
+                <div className="flex items-center gap-1 shrink-0">
+                  <button
+                    onClick={(e) => toggleFavorite(e, ch.id)}
+                    className={`p-1 rounded-full transition-all ${ch.isFavorite ? 'text-yellow-500 opacity-100' : 'text-gray-300 opacity-0 group-hover:opacity-100 hover:bg-gray-100 dark:hover:bg-gray-700'}`}
+                    title={ch.isFavorite ? 'Remove from favourites' : 'Add to favourites'}
+                  >
+                    <svg className="w-4 h-4" fill={ch.isFavorite ? 'currentColor' : 'none'} viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.382-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" />
+                    </svg>
+                  </button>
+                  <button
+                    onClick={() => setPlayingChannel(ch)}
+                    title="Play channel"
+                    className="p-1 rounded-full text-gray-300 opacity-0 group-hover:opacity-100 hover:bg-gray-100 dark:hover:bg-gray-700 hover:text-blue-500 transition-all"
+                  >
+                    <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
+                      <path d="M8 5v14l11-7z" />
+                    </svg>
+                  </button>
+                </div>
               </button>
             ))}
             {filteredChannels.length === 0 && (
@@ -128,6 +187,11 @@ export default function WatchClient({ initialData }: { initialData: PlaylistData
               bufferSize={initialData.bufferSize}
               playbackProfile={initialData.playbackProfile}
               proxyStreams={initialData.proxyStreams}
+              initialFavorite={playingChannel.isFavorite}
+              onToggleFavorite={(isFavorite) => {
+                setChannels(prev => prev.map(c => c.id === playingChannel.id ? { ...c, isFavorite } : c))
+                setPlayingChannel(prev => prev ? { ...prev, isFavorite } : null)
+              }}
               url={channelPlaybackUrl(playingChannel.id, playingChannel.streamUrl, {
                 playbackProfile: initialData.playbackProfile,
                 proxyStreams: initialData.proxyStreams,

@@ -11,7 +11,9 @@ interface Props {
   bufferSize?: string
   playbackProfile?: string | null
   proxyStreams?: boolean
+  initialFavorite?: boolean
   onClose: () => void
+  onToggleFavorite?: (isFavorite: boolean) => void
 }
 
 interface EpgData {
@@ -75,9 +77,10 @@ function isBenignMediaAbort(reason: unknown) {
   return message.includes('media resource was aborted by the user agent') || message.includes('aborted by the user agent')
 }
 
-export default function ChannelPlayer({ url, title, channelId, bufferSize = 'medium', playbackProfile, proxyStreams, onClose }: Props) {
+export default function ChannelPlayer({ url, title, channelId, bufferSize = 'medium', playbackProfile, proxyStreams, initialFavorite, onClose, onToggleFavorite }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null)
   const [error, setError] = useState<string | null>(null)
+  const [isFavorite, setIsFavorite] = useState(!!initialFavorite)
   const [epg, setEpg] = useState<EpgData | null>(null)
   const [loadingEpg, setLoadingEpg] = useState(false)
   const [isCasting, setIsCasting] = useState(false)
@@ -171,6 +174,22 @@ export default function ChannelPlayer({ url, title, channelId, bufferSize = 'med
     }
     fetchEpg()
   }, [channelId])
+
+  async function toggleFavorite() {
+    const newVal = !isFavorite
+    setIsFavorite(newVal)
+    try {
+      await fetch(`/api/channels/${channelId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ isFavorite: newVal }),
+      })
+      onToggleFavorite?.(newVal)
+    } catch (err) {
+      console.error('Failed to toggle favorite', err)
+      setIsFavorite(!newVal)
+    }
+  }
 
   useEffect(() => {
     if (!url.startsWith('/api/transcode/')) {
@@ -368,6 +387,11 @@ export default function ChannelPlayer({ url, title, channelId, bufferSize = 'med
           `}</style>
           {/* @ts-expect-error google-cast-launcher is a custom element from Cast SDK */}
           <google-cast-launcher />
+          <button onClick={toggleFavorite} className={`transition-colors ${isFavorite ? 'text-yellow-500 hover:text-yellow-400' : 'text-gray-400 hover:text-white'}`} title={isFavorite ? 'Remove from favourites' : 'Add to favourites'}>
+            <svg className="w-5 h-5" fill={isFavorite ? 'currentColor' : 'none'} viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.382-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" />
+            </svg>
+          </button>
           <button onClick={onClose} className="text-gray-400 hover:text-white transition-colors">
             <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />

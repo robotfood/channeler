@@ -61,7 +61,7 @@ export default function DashboardClient({ initialPlaylists, favorites: initialFa
   host: string
 }) {
   const [playlists, setPlaylists] = useState<Playlist[]>(initialPlaylists)
-  const [favorites] = useState<FavoriteChannel[]>(initialFavorites)
+  const [favorites, setFavorites] = useState<FavoriteChannel[]>(initialFavorites)
   const [playingChannel, setPlayingChannel] = useState<FavoriteChannel | null>(null)
 
   async function deletePlaylist(id: number, name: string) {
@@ -185,6 +185,10 @@ export default function DashboardClient({ initialPlaylists, favorites: initialFa
               bufferSize={playingChannel.bufferSize}
               playbackProfile={playingChannel.playbackProfile}
               proxyStreams={playingChannel.proxyStreams}
+              initialFavorite={true}
+              onToggleFavorite={(isFavorite) => {
+                if (!isFavorite) setFavorites(f => f.filter(ch => ch.id !== playingChannel.id))
+              }}
               url={channelPlaybackUrl(playingChannel.id, playingChannel.streamUrl, {
                 playbackProfile: playingChannel.playbackProfile,
                 proxyStreams: playingChannel.proxyStreams,
