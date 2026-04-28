@@ -115,10 +115,10 @@ export default function WatchClient({ initialData }: { initialData: PlaylistData
           </div>
           <div className="flex-1 overflow-y-auto p-2">
             {filteredChannels.map(ch => (
-              <button
+              <div
                 key={ch.id}
                 onClick={() => setPlayingChannel(ch)}
-                className={`w-full flex items-center gap-3 px-3 py-2 rounded transition-colors group text-left ${playingChannel?.id === ch.id ? 'bg-blue-50 dark:bg-blue-900/20 ring-1 ring-blue-200 dark:ring-blue-800/50' : 'hover:bg-gray-50 dark:hover:bg-gray-800'}`}
+                className={`w-full flex items-center gap-3 px-3 py-2 rounded transition-colors group text-left cursor-pointer ${playingChannel?.id === ch.id ? 'bg-blue-50 dark:bg-blue-900/20 ring-1 ring-blue-200 dark:ring-blue-800/50' : 'hover:bg-gray-50 dark:hover:bg-gray-800'}`}
               >
                 <div className="relative w-10 h-8 shrink-0 flex items-center justify-center bg-gray-900 rounded overflow-hidden">
                   {ch.tvgLogo ? (
@@ -170,7 +170,7 @@ export default function WatchClient({ initialData }: { initialData: PlaylistData
                     </svg>
                   </button>
                 </div>
-              </button>
+              </div>
             ))}
             {filteredChannels.length === 0 && (
               <p className="text-gray-400 dark:text-gray-600 text-sm text-center py-8">No channels found</p>
