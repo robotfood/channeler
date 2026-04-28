@@ -8,8 +8,10 @@ interface Props {
   url: string
   title: string
   channelId: number
+  playlistId?: number
   bufferSize?: string
   playbackProfile?: string | null
+  transcodeBackend?: string | null
   proxyStreams?: boolean
   initialFavorite?: boolean
   onClose: () => void
@@ -34,6 +36,29 @@ interface TranscodeStats {
   memoryPercent: number | null
   backend: string | null
 }
+
+const BACKENDS = [
+  { value: 'auto', label: 'Auto Detect' },
+  { value: 'vaapi', label: 'VAAPI (Intel/AMD)' },
+  { value: 'qsv', label: 'Intel QSV' },
+  { value: 'videotoolbox', label: 'VideoToolbox (Mac)' },
+  { value: 'amf', label: 'AMD AMF' },
+  { value: 'cpu', label: 'Force CPU' },
+]
+
+const PROFILES = [
+  { value: 'proxy', label: 'Proxy Passthrough' },
+  { value: 'stable_hls', label: 'Stable HLS Remux' },
+  { value: 'transcode_720p', label: '720p Transcode' },
+  { value: 'transcode_1080p', label: '1080p Transcode' },
+  { value: 'transcode_4k_fast', label: '4K Pixel Doubling' },
+  { value: 'enhanced_1080p', label: 'Enhanced 1080p' },
+  { value: 'clean_1080p', label: 'Clean 1080p' },
+  { value: 'sharp_1080p', label: 'Sharp 1080p' },
+  { value: 'smooth_720p60', label: 'Smooth 720p60' },
+  { value: 'sports_720p60', label: 'Sports 720p60' },
+  { value: 'sports_lite_720p60', label: 'Sports Lite 60 FPS' },
+]
 
 const BUFFER_CONFIGS: Record<string, {
   backBufferLength: number
@@ -77,20 +102,25 @@ function isBenignMediaAbort(reason: unknown) {
   return message.includes('media resource was aborted by the user agent') || message.includes('aborted by the user agent')
 }
 
-export default function ChannelPlayer({ url, title, channelId, bufferSize = 'medium', playbackProfile, proxyStreams, initialFavorite, onClose, onToggleFavorite }: Props) {
+export default function ChannelPlayer({ url, title, channelId, playlistId, bufferSize = 'medium', playbackProfile, transcodeBackend, proxyStreams, initialFavorite, onClose, onToggleFavorite }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null)
   const [error, setError] = useState<string | null>(null)
   const [isFavorite, setIsFavorite] = useState(!!initialFavorite)
   const [epg, setEpg] = useState<EpgData | null>(null)
   const [loadingEpg, setLoadingEpg] = useState(false)
   const [isCasting, setIsCasting] = useState(false)
+  const [showSettings, setShowSettings] = useState(false)
+  const [activeProfile, setActiveProfile] = useState(playbackProfile || 'proxy')
+  const [activeBackend, setActiveBackend] = useState(transcodeBackend || 'auto')
+  const [streamUrl, setStreamUrl] = useState(url)
   const [playbackStats, setPlaybackStats] = useState<PlaybackStats>({ width: null, height: null, fps: null })
   const [transcodeStats, setTranscodeStats] = useState<TranscodeStats | null>(null)
   const hlsRef = useRef<Hls | null>(null)
   const retryCountRef = useRef(0)
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const frameStatsRef = useRef({ frames: 0, startedAt: 0 })
-  const modeLabel = playbackModeLabel(playbackProfile, proxyStreams)
+  const versionRef = useRef(0)
+  const modeLabel = playbackModeLabel(activeProfile, proxyStreams)
 
   useEffect(() => {
     function handleUnhandledRejection(event: PromiseRejectionEvent) {
@@ -191,8 +221,39 @@ export default function ChannelPlayer({ url, title, channelId, bufferSize = 'med
     }
   }
 
+  async function updateSettings(newProfile?: string, newBackend?: string) {
+    if (!playlistId) return
+    
+    const profile = newProfile ?? activeProfile
+    const backend = newBackend ?? activeBackend
+
+    try {
+      await fetch(`/api/playlists/${playlistId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          playbackProfile: profile,
+          transcodeBackend: backend,
+          proxyStreams: profile !== 'direct',
+        }),
+      })
+
+      if (newProfile) setActiveProfile(profile)
+      if (newBackend) setActiveBackend(backend)
+      
+      // Reload stream - since the backend/profile changed, the server will restart the process
+      // We need to force a URL refresh by adding a cache-buster or just re-setting it
+      const base = streamUrl.split('?')[0]
+      versionRef.current += 1
+      setStreamUrl(`${base}?v=${versionRef.current}`)
+      setShowSettings(false)
+    } catch (err) {
+      console.error('Failed to update playlist settings', err)
+    }
+  }
+
   useEffect(() => {
-    if (!url.startsWith('/api/transcode/')) {
+    if (!streamUrl.startsWith('/api/transcode/')) {
       const resetTimer = setTimeout(() => setTranscodeStats(null), 0)
       return () => clearTimeout(resetTimer)
     }
@@ -233,7 +294,7 @@ export default function ChannelPlayer({ url, title, channelId, bufferSize = 'med
       cancelled = true
       clearInterval(timer)
     }
-  }, [channelId, url])
+  }, [channelId, streamUrl])
 
   useEffect(() => {
     const video = videoRef.current
@@ -296,7 +357,7 @@ export default function ChannelPlayer({ url, title, channelId, bufferSize = 'med
         appendErrorMaxRetry: 6,
       })
       hlsRef.current = hls
-      hls.loadSource(url)
+      hls.loadSource(streamUrl)
       hls.attachMedia(media)
       hls.on(Hls.Events.MANIFEST_PARSED, () => {
         retryCountRef.current = 0
@@ -310,7 +371,7 @@ export default function ChannelPlayer({ url, title, channelId, bufferSize = 'med
               if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current)
               reconnectTimerRef.current = setTimeout(() => {
                 retryCountRef.current += 1
-                hls.loadSource(url)
+                hls.loadSource(streamUrl)
                 hls.startLoad()
               }, Math.min(1000 * Math.pow(2, retryCountRef.current), 30000))
               break
@@ -333,7 +394,7 @@ export default function ChannelPlayer({ url, title, channelId, bufferSize = 'med
       })
     } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
       // Native HLS support (Safari/iOS)
-      media.src = url
+      media.src = streamUrl
     } else {
       setError('Your browser does not support HLS playback')
     }
@@ -353,7 +414,7 @@ export default function ChannelPlayer({ url, title, channelId, bufferSize = 'med
         hlsRef.current = null
       }
     }
-  }, [url, bufferSize])
+  }, [streamUrl, bufferSize])
 
   return (
     <div className="flex flex-col h-full bg-black text-white overflow-hidden rounded-lg shadow-xl border border-gray-800">
@@ -385,6 +446,56 @@ export default function ChannelPlayer({ url, title, channelId, bufferSize = 'med
               cursor: pointer;
             }
           `}</style>
+          
+          <div className="relative">
+            <button 
+              onClick={() => setShowSettings(!showSettings)}
+              className={`p-1 rounded hover:bg-gray-800 transition-colors ${showSettings ? 'text-blue-500' : 'text-gray-400 hover:text-white'}`}
+              title="Stream Settings"
+            >
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+              </svg>
+            </button>
+
+            {showSettings && (
+              <div className="absolute right-0 mt-2 w-64 bg-gray-900 border border-gray-700 rounded-lg shadow-2xl z-[60] p-3 space-y-4">
+                <div>
+                  <label className="block text-[10px] uppercase font-bold text-gray-500 mb-2 tracking-wider">Playback Profile</label>
+                  <div className="grid grid-cols-1 gap-1 max-h-48 overflow-y-auto pr-1">
+                    {PROFILES.map(p => (
+                      <button
+                        key={p.value}
+                        onClick={() => updateSettings(p.value)}
+                        className={`text-left px-2 py-1.5 rounded text-xs transition-colors ${activeProfile === p.value ? 'bg-blue-600 text-white' : 'hover:bg-gray-800 text-gray-300'}`}
+                      >
+                        {p.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {activeProfile !== 'proxy' && activeProfile !== 'stable_hls' && (
+                  <div className="pt-3 border-t border-gray-800">
+                    <label className="block text-[10px] uppercase font-bold text-gray-500 mb-2 tracking-wider">Hardware Backend</label>
+                    <div className="grid grid-cols-1 gap-1">
+                      {BACKENDS.map(b => (
+                        <button
+                          key={b.value}
+                          onClick={() => updateSettings(undefined, b.value)}
+                          className={`text-left px-2 py-1.5 rounded text-xs transition-colors ${activeBackend === b.value ? 'bg-blue-600 text-white' : 'hover:bg-gray-800 text-gray-300'}`}
+                        >
+                          {b.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
           {/* @ts-expect-error google-cast-launcher is a custom element from Cast SDK */}
           <google-cast-launcher />
           <button onClick={toggleFavorite} className={`transition-colors ${isFavorite ? 'text-yellow-500 hover:text-yellow-400' : 'text-gray-400 hover:text-white'}`} title={isFavorite ? 'Remove from favourites' : 'Add to favourites'}>

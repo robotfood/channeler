@@ -106,6 +106,7 @@ export async function getFavoriteChannels() {
     proxyStreams: playlists.proxyStreams,
     bufferSize: playlists.bufferSize,
     playbackProfile: playlists.playbackProfile,
+    transcodeBackend: playlists.transcodeBackend,
   })
     .from(channels)
     .innerJoin(playlists, eq(channels.playlistId, playlists.id))

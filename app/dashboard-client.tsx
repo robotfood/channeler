@@ -182,8 +182,10 @@ export default function DashboardClient({ initialPlaylists, favorites: initialFa
             <ChannelPlayer
               title={playingChannel.displayName}
               channelId={playingChannel.id}
+              playlistId={playingChannel.playlistId}
               bufferSize={playingChannel.bufferSize}
               playbackProfile={playingChannel.playbackProfile}
+              transcodeBackend={playingChannel.transcodeBackend}
               proxyStreams={playingChannel.proxyStreams}
               initialFavorite={true}
               onToggleFavorite={(isFavorite) => {

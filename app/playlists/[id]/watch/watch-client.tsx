@@ -184,8 +184,10 @@ export default function WatchClient({ initialData }: { initialData: PlaylistData
             <ChannelPlayer
               title={playingChannel.displayName}
               channelId={playingChannel.id}
+              playlistId={initialData.id}
               bufferSize={initialData.bufferSize}
               playbackProfile={initialData.playbackProfile}
+              transcodeBackend={initialData.transcodeBackend}
               proxyStreams={initialData.proxyStreams}
               initialFavorite={playingChannel.isFavorite}
               onToggleFavorite={(isFavorite) => {
