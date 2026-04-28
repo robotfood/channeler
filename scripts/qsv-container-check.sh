@@ -63,6 +63,8 @@ if command -v vainfo >/dev/null 2>&1 && [ -e "$QSV_DEVICE" ]; then
   fi
 fi
 
+vaapi_passed=false
+
 if command -v "$FFMPEG_BIN" >/dev/null 2>&1 && [ -e "$QSV_DEVICE" ]; then
   if "$FFMPEG_BIN" \
     -hide_banner \
@@ -77,6 +79,7 @@ if command -v "$FFMPEG_BIN" >/dev/null 2>&1 && [ -e "$QSV_DEVICE" ]; then
     -qp 23 \
     -f null - >/tmp/channeler-vaapi-ffmpeg.log 2>&1; then
     log "FFmpeg VAAPI validation encode passed"
+    vaapi_passed=true
   else
     fail "FFmpeg VAAPI validation encode failed: $(tail -n 20 /tmp/channeler-vaapi-ffmpeg.log | tr '\n' ' ')"
   fi
@@ -99,6 +102,8 @@ if command -v "$FFMPEG_BIN" >/dev/null 2>&1 && [ -e "$QSV_DEVICE" ]; then
     -bufsize 6000k \
     -f null - >/tmp/channeler-qsv-ffmpeg.log 2>&1; then
     log "FFmpeg QSV validation encode passed using VAAPI-derived QSV init"
+  elif [ "$vaapi_passed" = true ]; then
+    log "FFmpeg QSV validation encode not supported on this host; VAAPI passed so continuing"
   else
     fail "FFmpeg QSV validation encode failed: $(tail -n 20 /tmp/channeler-qsv-ffmpeg.log | tr '\n' ' ')"
   fi

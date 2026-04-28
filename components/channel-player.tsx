@@ -50,19 +50,15 @@ const PLAYBACK_PROFILE_LABELS: Record<string, string> = {
   direct: 'Direct',
   proxy: 'Proxy passthrough',
   stable_hls: 'Stable HLS remux',
-  transcode_720p: 'Transcode 720p',
-  transcode_1080p: 'Transcode 1080p',
-  qsv_720p: 'Hardware 720p',
-  qsv_1080p: 'Hardware 1080p',
-  qsv_4k: 'Hardware 4K',
+  transcode_720p: '720p Transcode',
+  transcode_1080p: '1080p Transcode',
+  transcode_4k: '4K Transcode',
   enhanced_1080p: 'Enhanced 1080p',
   clean_1080p: 'Clean 1080p',
   sharp_1080p: 'Sharp 1080p',
   smooth_720p60: 'Smooth 720p60',
-  hardware_smooth_720p60: 'Hardware Smooth 720p60',
   smooth_1080p60: 'Smooth 1080p60',
   sports_720p60: 'Sports 720p60',
-  hardware_sports_720p60: 'Hardware Sports 720p60',
 }
 
 function playbackModeLabel(playbackProfile: string | null | undefined, proxyStreams: boolean | undefined) {

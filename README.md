@@ -64,7 +64,7 @@ Playback profiles control whether clients receive the original stream, a proxied
 | Transcode 1080p | CPU transcodes to H.264/AAC 1080p HLS | Large | High | None | Client compatibility at higher resolution |
 | Hardware 720p | Hardware H.264 encode to 720p HLS using QSV, Apple VideoToolbox, or CPU fallback | Large | Low to medium | Medium | Hardware-assisted 720p transcode |
 | Hardware 1080p | Hardware H.264 encode to 1080p HLS using QSV, Apple VideoToolbox, or CPU fallback | Large | Medium | Medium to high | Hardware-assisted 1080p transcode |
-| Hardware 4K | Hardware H.264 encode to 2160p HLS using QSV, Apple VideoToolbox, or CPU fallback | XL | Medium to high | High | Experimental 4K output for capable local clients |
+| Hardware 4K | Hardware H.264 encode to 2160p HLS using QSV, Apple VideoToolbox, or CPU fallback | XL | Medium to high | High | Higher-bitrate 4K output for capable local clients |
 | Enhanced 1080p | Deinterlaces, scales, sharpens, then CPU transcodes | Large | High | None | General quality improvement for soft/interlaced channels |
 | Clean 1080p | Deinterlaces, denoises, lightly sharpens, then CPU transcodes | Large | High | None | Noisy or blocky low-bitrate channels |
 | Sharp 1080p | Deinterlaces, scales, stronger sharpening, then CPU transcodes | Large | High | None | Soft SD/720p channels that need edge detail |

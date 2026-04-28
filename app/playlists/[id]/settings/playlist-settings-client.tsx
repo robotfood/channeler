@@ -34,76 +34,89 @@ const PLAYBACK_PROFILES = [
     value: 'proxy',
     label: 'Proxy passthrough',
     detail: 'Routes the original stream through this server without changing video quality. Ideal buffer: medium.',
+    fps: 'Source',
+    res: 'Source',
+    quality: 'No changes',
   },
   {
     value: 'stable_hls',
     label: 'Stable HLS remux',
     detail: 'Repackages the source into local HLS segments for steadier playback, without re-encoding. Ideal buffer: large.',
+    fps: 'Source',
+    res: 'Source',
+    quality: 'No changes',
   },
   {
     value: 'transcode_720p',
-    label: 'Transcode 720p',
-    detail: 'CPU transcodes to 720p HLS for broad client compatibility and lower bandwidth. Ideal buffer: large.',
+    label: '720p Transcode',
+    detail: 'Transcodes to 720p HLS for broad client compatibility and lower bandwidth. Uses the selected hardware backend.',
+    fps: 'Source',
+    res: '720p',
+    quality: 'Lanczos scaling',
   },
   {
     value: 'transcode_1080p',
-    label: 'Transcode 1080p',
-    detail: 'CPU transcodes to 1080p HLS for compatibility while preserving more detail. Ideal buffer: large.',
+    label: '1080p Transcode',
+    detail: 'Transcodes to 1080p HLS for compatibility while preserving more detail. Uses the selected hardware backend.',
+    fps: 'Source',
+    res: '1080p',
+    quality: 'Lanczos scaling',
   },
   {
-    value: 'qsv_720p',
-    label: 'Hardware 720p',
-    detail: 'Uses the configured hardware encoder, Intel QSV or Apple VideoToolbox, to produce 720p HLS. Ideal buffer: large.',
-  },
-  {
-    value: 'qsv_1080p',
-    label: 'Hardware 1080p',
-    detail: 'Uses the configured hardware encoder, Intel QSV or Apple VideoToolbox, to produce 1080p HLS. Ideal buffer: large.',
-  },
-  {
-    value: 'qsv_4k',
-    label: 'Hardware 4K',
-    detail: 'Uses the configured hardware encoder to upscale or normalize streams to 2160p HLS. Experimental and bandwidth-heavy. Ideal buffer: xl.',
+    value: 'transcode_4k',
+    label: '4K Transcode',
+    detail: 'Upscales or normalizes streams to 2160p HLS. Higher bitrate, best for 4K displays. Experimental.',
+    fps: 'Source',
+    res: '4K',
+    quality: 'Lanczos scaling',
   },
   {
     value: 'enhanced_1080p',
     label: 'Enhanced 1080p',
-    detail: 'CPU deinterlaces, scales, and lightly sharpens to improve soft or interlaced feeds. Ideal buffer: large.',
+    detail: 'Deinterlaces, scales, and lightly sharpens to improve soft or interlaced feeds.',
+    fps: 'Source',
+    res: '1080p',
+    quality: 'Deinterlace, Scale, Sharpen',
   },
   {
     value: 'clean_1080p',
     label: 'Clean 1080p',
-    detail: 'Adds denoise plus mild sharpening for low-bitrate streams with compression noise. Ideal buffer: large.',
+    detail: 'Adds denoise plus mild sharpening for low-bitrate streams with compression noise.',
+    fps: 'Source',
+    res: '1080p',
+    quality: 'Deinterlace, Denoise, Scale, Sharpen',
   },
   {
     value: 'sharp_1080p',
     label: 'Sharp 1080p',
-    detail: 'Applies stronger sharpening for soft sources; best tested per playlist. Ideal buffer: large.',
+    detail: 'Applies stronger sharpening for soft sources; best tested per playlist.',
+    fps: 'Source',
+    res: '1080p',
+    quality: 'Deinterlace, Scale, Strong Sharpen',
   },
   {
     value: 'smooth_720p60',
     label: 'Smooth 720p60',
-    detail: 'Interpolates motion to 60 FPS at 720p. CPU intensive, useful for sports and news. Ideal buffer: xl.',
-  },
-  {
-    value: 'hardware_smooth_720p60',
-    label: 'Hardware Smooth 720p60',
-    detail: 'CPU interpolates motion to 60 FPS at 720p, then the configured hardware backend encodes H.264. Ideal buffer: xl.',
+    detail: 'Interpolates motion to 60 FPS at 720p. CPU intensive, useful for sports and news.',
+    fps: '60',
+    res: '720p',
+    quality: 'Scale, Motion Interpolation',
   },
   {
     value: 'smooth_1080p60',
     label: 'Smooth 1080p60',
-    detail: 'Interpolates motion to 60 FPS at 1080p. Very CPU intensive. Ideal buffer: xl.',
+    detail: 'Interpolates motion to 60 FPS at 1080p. Very CPU intensive.',
+    fps: '60',
+    res: '1080p',
+    quality: 'Scale, Motion Interpolation',
   },
   {
     value: 'sports_720p60',
     label: 'Sports 720p60',
-    detail: 'Combines deinterlace, sharpening, and 60 FPS interpolation tuned for sports feeds. Ideal buffer: xl.',
-  },
-  {
-    value: 'hardware_sports_720p60',
-    label: 'Hardware Sports 720p60',
-    detail: 'CPU handles sports motion enhancement, then the configured hardware backend encodes H.264. Ideal buffer: xl.',
+    detail: 'Combines deinterlace, sharpening, and 60 FPS interpolation tuned for sports feeds.',
+    fps: '60',
+    res: '720p',
+    quality: 'Deinterlace, Scale, Sharpen, Motion Interpolation',
   },
 ]
 
@@ -323,18 +336,18 @@ export default function PlaylistSettingsClient({ initialData, playlistId }: {
 
           {useProxyPlayback && (
             <div className="space-y-3">
-              <div className="flex flex-col gap-1">
-                <label htmlFor="transcodeBackend" className="text-xs text-gray-500 dark:text-gray-400">Hardware Backend</label>
+              <div className="flex flex-col gap-1 p-3 bg-blue-50/50 dark:bg-blue-900/10 border border-blue-100 dark:border-blue-900/30 rounded-lg">
+                <label htmlFor="transcodeBackend" className="text-xs font-semibold uppercase tracking-wider text-blue-600 dark:text-blue-400">Global Transcode Backend</label>
                 <select id="transcodeBackend" value={transcodeBackend} onChange={e => setTranscodeBackend(e.target.value)}
-                  className="w-full max-w-[260px] bg-gray-50 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded px-2 py-1 text-sm focus:outline-none focus:border-blue-500">
-                  <option value="auto">Auto detect</option>
+                  className="w-full max-w-[260px] bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded px-2 py-1 text-sm focus:outline-none focus:border-blue-500 mt-1">
+                  <option value="auto">Auto detect (Recommended)</option>
                   <option value="vaapi">Linux VAAPI</option>
                   <option value="qsv">Intel QSV</option>
                   <option value="amf">AMD AMF</option>
                   <option value="videotoolbox">Apple VideoToolbox</option>
-                  <option value="cpu">CPU fallback</option>
+                  <option value="cpu">Force CPU fallback</option>
                 </select>
-                <p className="text-[10px] text-gray-400 dark:text-gray-500">Only hardware profiles use this. Auto validates FFmpeg hardware encoders with short test encodes, then falls back to CPU.</p>
+                <p className="text-[10px] text-gray-500 dark:text-gray-400 mt-1">Controls how video is encoded for ALL profiles below. Auto validates hardware and falls back to CPU if needed.</p>
               </div>
 
               <fieldset className="space-y-2 rounded-lg border border-gray-200 bg-white p-3 dark:border-gray-800 dark:bg-gray-950/30">
@@ -347,7 +360,12 @@ export default function PlaylistSettingsClient({ initialData, playlistId }: {
                       className="mt-1 border-gray-300 text-blue-600 focus:ring-blue-500 dark:border-gray-600" />
                     <span>
                       <span className="block text-sm font-medium text-gray-800 dark:text-gray-200">{profile.label}</span>
-                      <span className="block text-xs leading-5 text-gray-500 dark:text-gray-500">{profile.detail}</span>
+                      <span className="block text-xs leading-5 text-gray-500 dark:text-gray-500 mb-1">{profile.detail}</span>
+                      <span className="flex flex-wrap gap-x-4 gap-y-1 text-[10px] uppercase font-semibold tracking-wider text-gray-400 dark:text-gray-500">
+                        <span>FPS: {profile.fps}</span>
+                        <span>Res: {profile.res}</span>
+                        <span>Quality: {profile.quality}</span>
+                      </span>
                     </span>
                   </label>
                 ))}

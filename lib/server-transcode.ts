@@ -288,7 +288,7 @@ function hardwareH264Args(backend: Exclude<HardwareBackend, 'auto'>, height: num
       '-vf', `scale=-2:${height}:flags=lanczos,format=nv12,hwupload`,
       '-c:v', 'h264_vaapi',
       '-force_key_frames', 'expr:gte(t,n_forced*2)',
-      '-qp', height >= 1080 ? '21' : '23',
+      '-qp', height >= 2160 ? '18' : height >= 1080 ? '21' : '23',
       '-c:a', 'aac',
       '-b:a', audioBitrate,
     ]
@@ -425,128 +425,52 @@ function profileArgs(profile: PlaybackProfile, backend: Exclude<HardwareBackend,
     case 'stable_hls':
       return ['-map', '0:v:0?', '-map', '0:a:0?', '-c', 'copy']
     case 'transcode_720p':
-      return cpuH264Args(720, '3500k', '4200k', '7000k', '128k')
-    case 'transcode_1080p':
-      return cpuH264Args(1080, '6000k', '7200k', '12000k', '160k')
-    case 'qsv_720p':
       return hardwareH264Args(backend, 720, '3500k', '4200k', '7000k', '128k')
-    case 'qsv_1080p':
+    case 'transcode_1080p':
       return hardwareH264Args(backend, 1080, '6000k', '7200k', '12000k', '160k')
-    case 'qsv_4k':
-      return hardwareH264Args(backend, 2160, '14000k', '18000k', '28000k', '192k')
+    case 'transcode_4k':
+      return hardwareH264Args(backend, 2160, '22000k', '28000k', '44000k', '192k')
     case 'enhanced_1080p':
-      return [
-        '-map', '0:v:0?', '-map', '0:a:0?',
-        '-vf', 'yadif=mode=send_frame:parity=auto:deint=interlaced,scale=-2:1080:flags=lanczos,unsharp=5:5:0.45:3:3:0.25,format=yuv420p',
-        '-c:v', 'libx264',
-        '-preset', 'veryfast',
-        '-tune', 'zerolatency',
-        '-force_key_frames', 'expr:gte(t,n_forced*2)',
-        '-sc_threshold', '0',
-        '-b:v', '6500k',
-        '-maxrate', '8000k',
-        '-bufsize', '13000k',
-        '-c:a', 'aac',
-        '-b:a', '160k',
-      ]
+      return hardwareFilteredH264Args(
+        backend,
+        'yadif=mode=send_frame:parity=auto:deint=interlaced,scale=-2:1080:flags=lanczos,unsharp=5:5:0.45:3:3:0.25',
+        '6500k', '8000k', '13000k', '160k',
+        30 // default fps for non-smooth profiles
+      )
     case 'clean_1080p':
-      return [
-        '-map', '0:v:0?', '-map', '0:a:0?',
-        '-vf', 'yadif=mode=send_frame:parity=auto:deint=interlaced,hqdn3d=1.5:1.5:4:4,scale=-2:1080:flags=lanczos,unsharp=3:3:0.25:3:3:0.12,format=yuv420p',
-        '-c:v', 'libx264',
-        '-preset', 'veryfast',
-        '-tune', 'zerolatency',
-        '-force_key_frames', 'expr:gte(t,n_forced*2)',
-        '-sc_threshold', '0',
-        '-b:v', '6000k',
-        '-maxrate', '7500k',
-        '-bufsize', '12000k',
-        '-c:a', 'aac',
-        '-b:a', '160k',
-      ]
+      return hardwareFilteredH264Args(
+        backend,
+        'yadif=mode=send_frame:parity=auto:deint=interlaced,hqdn3d=1.5:1.5:4:4,scale=-2:1080:flags=lanczos,unsharp=3:3:0.25:3:3:0.12',
+        '6000k', '7500k', '12000k', '160k',
+        30
+      )
     case 'sharp_1080p':
-      return [
-        '-map', '0:v:0?', '-map', '0:a:0?',
-        '-vf', 'yadif=mode=send_frame:parity=auto:deint=interlaced,scale=-2:1080:flags=lanczos,unsharp=7:7:0.65:5:5:0.35,format=yuv420p',
-        '-c:v', 'libx264',
-        '-preset', 'veryfast',
-        '-tune', 'zerolatency',
-        '-force_key_frames', 'expr:gte(t,n_forced*2)',
-        '-sc_threshold', '0',
-        '-b:v', '6500k',
-        '-maxrate', '8500k',
-        '-bufsize', '13000k',
-        '-c:a', 'aac',
-        '-b:a', '160k',
-      ]
+      return hardwareFilteredH264Args(
+        backend,
+        'yadif=mode=send_frame:parity=auto:deint=interlaced,scale=-2:1080:flags=lanczos,unsharp=7:7:0.65:5:5:0.35',
+        '6500k', '8500k', '13000k', '160k',
+        30
+      )
     case 'smooth_720p60':
-      return [
-        '-map', '0:v:0?', '-map', '0:a:0?',
-        '-vf', 'scale=-2:720:flags=lanczos,minterpolate=fps=60:mi_mode=mci:mc_mode=aobmc:me_mode=bidir,format=yuv420p',
-        '-c:v', 'libx264',
-        '-preset', 'veryfast',
-        '-tune', 'zerolatency',
-        '-r', '60',
-        '-g', '120',
-        '-keyint_min', '120',
-        '-sc_threshold', '0',
-        '-b:v', '5000k',
-        '-maxrate', '6500k',
-        '-bufsize', '10000k',
-        '-c:a', 'aac',
-        '-b:a', '160k',
-      ]
-    case 'hardware_smooth_720p60':
       return hardwareFilteredH264Args(
         backend,
         'scale=-2:720:flags=lanczos,minterpolate=fps=60:mi_mode=mci:mc_mode=aobmc:me_mode=bidir',
-        '5000k',
-        '6500k',
-        '10000k',
-        '160k'
+        '5000k', '6500k', '10000k', '160k',
+        60
       )
     case 'smooth_1080p60':
-      return [
-        '-map', '0:v:0?', '-map', '0:a:0?',
-        '-vf', 'scale=-2:1080:flags=lanczos,minterpolate=fps=60:mi_mode=mci:mc_mode=aobmc:me_mode=bidir,format=yuv420p',
-        '-c:v', 'libx264',
-        '-preset', 'veryfast',
-        '-tune', 'zerolatency',
-        '-r', '60',
-        '-g', '120',
-        '-keyint_min', '120',
-        '-sc_threshold', '0',
-        '-b:v', '8500k',
-        '-maxrate', '10000k',
-        '-bufsize', '17000k',
-        '-c:a', 'aac',
-        '-b:a', '160k',
-      ]
+      return hardwareFilteredH264Args(
+        backend,
+        'scale=-2:1080:flags=lanczos,minterpolate=fps=60:mi_mode=mci:mc_mode=aobmc:me_mode=bidir',
+        '8500k', '10000k', '17000k', '160k',
+        60
+      )
     case 'sports_720p60':
-      return [
-        '-map', '0:v:0?', '-map', '0:a:0?',
-        '-vf', 'yadif=mode=send_frame:parity=auto:deint=interlaced,scale=-2:720:flags=lanczos,unsharp=5:5:0.35:3:3:0.2,minterpolate=fps=60:mi_mode=mci:mc_mode=aobmc:me_mode=bidir,format=yuv420p',
-        '-c:v', 'libx264',
-        '-preset', 'veryfast',
-        '-tune', 'zerolatency',
-        '-r', '60',
-        '-g', '120',
-        '-keyint_min', '120',
-        '-sc_threshold', '0',
-        '-b:v', '5500k',
-        '-maxrate', '7000k',
-        '-bufsize', '11000k',
-        '-c:a', 'aac',
-        '-b:a', '160k',
-      ]
-    case 'hardware_sports_720p60':
       return hardwareFilteredH264Args(
         backend,
         'yadif=mode=send_frame:parity=auto:deint=interlaced,scale=-2:720:flags=lanczos,unsharp=5:5:0.35:3:3:0.2,minterpolate=fps=60:mi_mode=mci:mc_mode=aobmc:me_mode=bidir',
-        '5500k',
-        '7000k',
-        '11000k',
-        '160k'
+        '5500k', '7000k', '11000k', '160k',
+        60
       )
     default:
       return ['-map', '0:v:0?', '-map', '0:a:0?', '-c', 'copy']
