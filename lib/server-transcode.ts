@@ -3,6 +3,16 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { dataPath } from '@/lib/data-path'
+import {
+  encoderForBackend,
+  hlsArgs,
+  profileArgs,
+  probeFormatForBackend,
+  qsvDeviceArgs as qsvDeviceArgsForDevice,
+  TRANSCODE_BACKENDS,
+  type TranscodeBackend,
+  vaapiDeviceArgs as vaapiDeviceArgsForDevice,
+} from '@/lib/ffmpeg-transcode-args'
 import { normalizePlaybackProfile, type PlaybackProfile } from '@/lib/playback-profile'
 import type { channels, playlists } from '@/lib/schema'
 
@@ -27,11 +37,11 @@ const IDLE_TIMEOUT_MS = 90_000
 const STARTUP_TIMEOUT_MS = 20_000
 const HEAVY_STARTUP_TIMEOUT_MS = 45_000
 const sessions = new Map<string, Session>()
-const HARDWARE_BACKENDS = ['auto', 'vaapi', 'qsv', 'amf', 'videotoolbox', 'cpu'] as const
+const HARDWARE_BACKENDS = ['auto', ...TRANSCODE_BACKENDS] as const
 const HARDWARE_PROBE_ORDER: Array<Exclude<HardwareBackend, 'auto' | 'cpu'>> =
   process.platform === 'darwin' ? ['videotoolbox', 'qsv', 'amf', 'vaapi'] : ['vaapi', 'qsv', 'amf', 'videotoolbox']
 
-type HardwareBackend = typeof HARDWARE_BACKENDS[number]
+type HardwareBackend = 'auto' | TranscodeBackend
 let detectedHardwareBackend: Exclude<HardwareBackend, 'auto'> | null = null
 let hardwareProbeResults: Partial<Record<Exclude<HardwareBackend, 'auto'>, string>> = {}
 
@@ -51,23 +61,6 @@ function resolvedHardwareBackend(value?: string | null) {
   return backend
 }
 
-function encoderForBackend(backend: Exclude<HardwareBackend, 'auto' | 'cpu'>) {
-  switch (backend) {
-    case 'vaapi':
-      return 'h264_vaapi'
-    case 'videotoolbox':
-      return 'h264_videotoolbox'
-    case 'qsv':
-      return 'h264_qsv'
-    case 'amf':
-      return 'h264_amf'
-  }
-}
-
-function probeFormatForBackend(backend: Exclude<HardwareBackend, 'auto' | 'cpu'>) {
-  return backend === 'videotoolbox' ? 'format=yuv420p' : 'format=nv12'
-}
-
 function linuxRenderDevicePath() {
   const configured = process.env.TRANSCODE_RENDER_DEVICE?.trim() || process.env.TRANSCODE_QSV_DEVICE?.trim()
   if (configured) return configured
@@ -77,18 +70,7 @@ function linuxRenderDevicePath() {
 }
 
 function qsvDeviceArgs() {
-  const device = linuxRenderDevicePath()
-  if (!device) return []
-
-  if (process.platform === 'linux') {
-    return [
-      '-init_hw_device', `vaapi=va:${device}`,
-      '-init_hw_device', 'qsv=qsv@va',
-      '-filter_hw_device', 'qsv',
-    ]
-  }
-
-  return ['-init_hw_device', `qsv=qsv:${device}`, '-filter_hw_device', 'qsv']
+  return qsvDeviceArgsForDevice(linuxRenderDevicePath())
 }
 
 function qsvInitMode() {
@@ -97,8 +79,7 @@ function qsvInitMode() {
 }
 
 function vaapiDeviceArgs() {
-  const device = linuxRenderDevicePath()
-  return device ? ['-vaapi_device', device] : []
+  return vaapiDeviceArgsForDevice(linuxRenderDevicePath())
 }
 
 function ffmpegEncoders() {
@@ -249,286 +230,6 @@ function inputArgs(sourceUrl: string) {
     '-reconnect_delay_max', '5',
     '-i', sourceUrl,
   ]
-}
-
-function hlsArgs(outputDir: string, segmentTime = 2) {
-  return [
-    '-f', 'hls',
-    '-hls_time', String(segmentTime),
-    '-hls_list_size', '10',
-    '-hls_flags', 'delete_segments+append_list+omit_endlist+program_date_time',
-    '-hls_segment_filename', path.join(outputDir, 'segment_%06d.ts'),
-    path.join(outputDir, 'index.m3u8'),
-  ]
-}
-
-function cpuH264Args(height: number, videoBitrate: string, maxrate: string, bufsize: string, audioBitrate: string) {
-  return [
-    '-map', '0:v:0?', '-map', '0:a:0?',
-    // Use max(ih, height) to upscale low-res but never downscale high-res
-    // Note: Comma in 'max(ih\,height)' must be escaped because it's inside a filter chain
-    '-vf', `scale=-2:'max(ih\\,${height})':flags=lanczos,format=yuv420p`,
-    '-c:v', 'libx264',
-    '-preset', 'veryfast',
-    '-tune', 'zerolatency',
-    '-force_key_frames', 'expr:gte(t,n_forced*2)',
-    '-sc_threshold', '0',
-    '-b:v', videoBitrate,
-    '-maxrate', maxrate,
-    '-bufsize', bufsize,
-    '-c:a', 'aac',
-    '-ac', '6',
-    '-b:a', audioBitrate,
-    '-ar', '48000',
-    '-af', 'dynaudnorm=f=150:g=15:p=0.9,surround=chl_out=5.1',
-  ]
-}
-
-function hardwareH264Args(backend: Exclude<HardwareBackend, 'auto'>, height: number, videoBitrate: string, maxrate: string, bufsize: string, audioBitrate: string, scaleFlags = 'lanczos') {
-  const audioArgs = [
-    '-c:a', 'aac',
-    '-ac', '6',
-    '-b:a', audioBitrate,
-    '-ar', '48000',
-    '-af', 'dynaudnorm=f=150:g=15:p=0.9,surround=chl_out=5.1',
-  ]
-
-  if (backend === 'cpu') return cpuH264Args(height, videoBitrate, maxrate, bufsize, audioBitrate)
-
-  if (backend === 'vaapi') {
-    return [
-      '-map', '0:v:0?', '-map', '0:a:0?',
-      // Use hardware scaling (scale_vaapi) for 4K, otherwise use software scaler with 'max(ih, height)' logic
-      '-vf', height >= 2160 
-        ? `hwupload,scale_vaapi=w=-2:h=${height}:format=nv12` 
-        : `scale=-2:'max(ih\\,${height})':flags=${scaleFlags},format=nv12,hwupload`,
-      '-c:v', 'h264_vaapi',
-      '-force_key_frames', 'expr:gte(t,n_forced*2)',
-      '-qp', height >= 2160 ? '18' : height >= 1080 ? '21' : '23',
-      ...audioArgs,
-    ]
-  }
-
-  if (backend === 'videotoolbox') {
-    return [
-      '-map', '0:v:0?', '-map', '0:a:0?',
-      // Use scale_vt for Apple hardware scaling
-      '-vf', `scale_vt=w=-2:h=${height}:color_matrix=bt709`,
-      '-c:v', 'h264_videotoolbox',
-      '-realtime', 'true',
-      '-force_key_frames', 'expr:gte(t,n_forced*2)',
-      '-b:v', videoBitrate,
-      '-maxrate', maxrate,
-      '-bufsize', bufsize,
-      ...audioArgs,
-    ]
-  }
-
-  if (backend === 'amf') {
-    return [
-      '-map', '0:v:0?', '-map', '0:a:0?',
-      '-vf', `scale=-2:'max(ih\\,${height})':flags=${scaleFlags},format=nv12`,
-      '-c:v', 'h264_amf',
-      '-quality', 'speed',
-      '-force_key_frames', 'expr:gte(t,n_forced*2)',
-      '-b:v', videoBitrate,
-      '-maxrate', maxrate,
-      '-bufsize', bufsize,
-      ...audioArgs,
-    ]
-  }
-
-  return [
-    '-map', '0:v:0?', '-map', '0:a:0?',
-    '-vf', height >= 2160
-      ? `format=nv12,vpp_qsv=w=-2:h=${height}`
-      : `scale=-2:'max(ih\\,${height})':flags=${scaleFlags},format=nv12`,
-    '-c:v', 'h264_qsv',
-    '-preset', 'veryfast',
-    '-force_key_frames', 'expr:gte(t,n_forced*2)',
-    '-b:v', videoBitrate,
-    '-maxrate', maxrate,
-    '-bufsize', bufsize,
-    ...audioArgs,
-  ]
-}
-
-function hardwareFilteredH264Args(backend: Exclude<HardwareBackend, 'auto'>, filter: string, videoBitrate: string, maxrate: string, bufsize: string, audioBitrate: string, fps?: number) {
-  const audioArgs = [
-    '-c:a', 'aac',
-    '-ac', '6',
-    '-b:a', audioBitrate,
-    '-ar', '48000',
-    '-af', 'dynaudnorm=f=150:g=15:p=0.9,surround=chl_out=5.1',
-  ]
-
-  const fpsArgs = fps ? [
-    '-r', String(fps),
-    '-g', String(fps * 2),
-    '-keyint_min', String(fps * 2),
-  ] : []
-
-  if (backend === 'cpu') {
-    return [
-      '-map', '0:v:0?', '-map', '0:a:0?',
-      '-vf', `${filter},format=yuv420p`,
-      '-c:v', 'libx264',
-      '-preset', 'ultrafast',
-      '-tune', 'zerolatency',
-      ...fpsArgs,
-      '-force_key_frames', 'expr:gte(t,n_forced*2)',
-      '-sc_threshold', '0',
-      '-b:v', videoBitrate,
-      '-maxrate', maxrate,
-      '-bufsize', bufsize,
-      ...audioArgs,
-    ]
-  }
-
-  if (backend === 'vaapi') {
-    return [
-      '-map', '0:v:0?', '-map', '0:a:0?',
-      '-vf', filter.includes('hwupload') ? filter : `${filter},format=nv12,hwupload`,
-      '-c:v', 'h264_vaapi',
-      ...fpsArgs,
-      '-force_key_frames', 'expr:gte(t,n_forced*2)',
-      '-qp', '23',
-      ...audioArgs,
-    ]
-  }
-
-  if (backend === 'videotoolbox') {
-    return [
-      '-map', '0:v:0?', '-map', '0:a:0?',
-      // Use yadif_videotoolbox for Metal-accelerated deinterlacing if requested in filter
-      // Use mode=send_field (1) for 60fps
-      '-vf', filter.includes('yadif') 
-        ? filter.replace(/yadif=[^,]+/, 'yadif_videotoolbox=mode=send_field').replace(/scale=[^,]+/, 'scale_vt')
-        : filter.replace(/scale=[^,]+/, 'scale_vt'),
-      '-c:v', 'h264_videotoolbox',
-      ...fpsArgs,
-      '-force_key_frames', 'expr:gte(t,n_forced*2)',
-      '-b:v', videoBitrate,
-      '-maxrate', maxrate,
-      '-bufsize', bufsize,
-      ...audioArgs,
-    ]
-  }
-
-  if (backend === 'amf') {
-    return [
-      '-map', '0:v:0?', '-map', '0:a:0?',
-      '-vf', filter.includes('format=nv12') ? filter : `${filter},format=nv12`,
-      '-c:v', 'h264_amf',
-      '-quality', 'speed',
-      ...fpsArgs,
-      '-force_key_frames', 'expr:gte(t,n_forced*2)',
-      '-b:v', videoBitrate,
-      '-maxrate', maxrate,
-      '-bufsize', bufsize,
-      ...audioArgs,
-    ]
-  }
-
-  return [
-    '-map', '0:v:0?', '-map', '0:a:0?',
-    '-vf', filter.includes('format=nv12') ? filter : `${filter},format=nv12`,
-    '-c:v', 'h264_qsv',
-    '-preset', 'veryfast',
-    ...fpsArgs,
-    '-force_key_frames', 'expr:gte(t,n_forced*2)',
-    '-b:v', videoBitrate,
-    '-maxrate', maxrate,
-    '-bufsize', bufsize,
-    ...audioArgs,
-  ]
-}
-
-function profileArgs(profile: PlaybackProfile, backend: Exclude<HardwareBackend, 'auto'>) {
-  switch (profile) {
-    case 'stable_hls':
-      return [
-        '-map', '0:v:0?', '-map', '0:a:0?',
-        '-c:v', 'copy',
-        '-c:a', 'aac',
-        '-ac', '6',
-        '-b:a', '384k',
-        '-ar', '48000',
-        '-af', 'dynaudnorm=f=150:g=15:p=0.9,surround=chl_out=5.1',
-      ]
-    case 'transcode_720p':
-      return hardwareH264Args(backend, 720, '3500k', '4200k', '7000k', '384k')
-    case 'transcode_1080p':
-      return hardwareH264Args(backend, 1080, '6000k', '7200k', '12000k', '512k')
-    case 'transcode_4k':
-      return hardwareH264Args(backend, 2160, '22000k', '28000k', '44000k', '640k')
-    case 'transcode_4k_fast':
-      return hardwareH264Args(backend, 2160, '20000k', '26000k', '40000k', '640k', 'neighbor')
-    case 'transcode_4k_ultra':
-      return hardwareFilteredH264Args(
-        backend,
-        'scale=-2:2160:flags=lanczos,unsharp=3:3:0.5:3:3:0.5',
-        '25000k', '32000k', '50000k', '640k'
-      )
-    case 'enhanced_1080p':
-      return hardwareFilteredH264Args(
-        backend,
-        'yadif=mode=0:parity=auto:deint=interlaced,scale=-2:\'max(ih\\,1080)\':flags=lanczos,unsharp=5:5:0.45:3:3:0.25',
-        '6500k', '8000k', '13000k', '512k',
-        30
-      )
-    case 'clean_1080p':
-      return hardwareFilteredH264Args(
-        backend,
-        'yadif=mode=0:parity=auto:deint=interlaced,hqdn3d=1.5:1.5:4:4,scale=-2:\'max(ih\\,1080)\':flags=lanczos,unsharp=3:3:0.25:3:3:0.12',
-        '6000k', '7500k', '12000k', '512k',
-        30
-      )
-    case 'sharp_1080p':
-      return hardwareFilteredH264Args(
-        backend,
-        'yadif=mode=0:parity=auto:deint=interlaced,scale=-2:\'max(ih\\,1080)\':flags=lanczos,unsharp=7:7:0.65:5:5:0.35',
-        '6500k', '8500k', '13000k', '512k',
-        30
-      )
-    case 'smooth_720p60':
-      if (backend === 'vaapi') {
-        return hardwareFilteredH264Args(backend, 'hwupload,deinterlace_vaapi,scale_vaapi=w=-2:h=720:format=nv12', '5000k', '6000k', '10000k', '384k', 60)
-      }
-      if (backend === 'qsv') {
-        return hardwareFilteredH264Args(backend, 'format=nv12,vpp_qsv=deinterlace=2:w=-2:h=720', '5000k', '6000k', '10000k', '384k', 60)
-      }
-      return hardwareFilteredH264Args(backend, 'yadif=mode=send_field:parity=auto:deint=interlaced,scale=-2:\'max(ih\\,720)\':flags=lanczos', '4500k', '5500k', '9000k', '384k', 60)
-
-    case 'smooth_1080p60':
-      if (backend === 'vaapi') {
-        return hardwareFilteredH264Args(backend, 'hwupload,deinterlace_vaapi,scale_vaapi=w=-2:h=1080:format=nv12', '8500k', '10000k', '17000k', '512k', 60)
-      }
-      if (backend === 'qsv') {
-        return hardwareFilteredH264Args(backend, 'format=nv12,vpp_qsv=deinterlace=2:w=-2:h=1080', '8500k', '10000k', '17000k', '512k', 60)
-      }
-      return hardwareFilteredH264Args(backend, 'yadif=mode=send_field:parity=auto:deint=interlaced,scale=-2:\'max(ih\\,1080)\':flags=lanczos', '7500k', '9000k', '15000k', '512k', 60)
-
-    case 'sports_720p60':
-      if (backend === 'vaapi') {
-        return hardwareFilteredH264Args(backend, 'hwupload,deinterlace_vaapi,scale_vaapi=w=-2:h=720:format=nv12', '5500k', '7000k', '11000k', '384k', 60)
-      }
-      if (backend === 'qsv') {
-        return hardwareFilteredH264Args(backend, 'format=nv12,vpp_qsv=deinterlace=2:w=-2:h=720:detail=50:denoise=20', '5500k', '7000k', '11000k', '384k', 60)
-      }
-      return hardwareFilteredH264Args(backend, 'yadif=mode=send_field:parity=auto:deint=interlaced,scale=-2:\'max(ih\\,720)\':flags=lanczos,unsharp=5:5:0.35:3:3:0.2', '5500k', '7000k', '11000k', '384k', 60)
-
-    case 'sports_lite_720p60':
-      if (backend === 'vaapi') {
-        return hardwareFilteredH264Args(backend, 'hwupload,deinterlace_vaapi,scale_vaapi=w=-2:h=720:format=nv12', '4500k', '5500k', '9000k', '384k', 60)
-      }
-      if (backend === 'qsv') {
-        return hardwareFilteredH264Args(backend, 'format=nv12,vpp_qsv=deinterlace=2:w=-2:h=720', '4500k', '5500k', '9000k', '384k', 60)
-      }
-      return hardwareFilteredH264Args(backend, 'yadif=mode=send_field:parity=auto:deint=interlaced,scale=-2:\'max(ih\\,720)\':flags=lanczos', '4500k', '5500k', '9000k', '384k', 60)
-    default:
-      return ['-map', '0:v:0?', '-map', '0:a:0?', '-c', 'copy']
-  }
 }
 
 function ffmpegArgs(sourceUrl: string, outputDir: string, profile: PlaybackProfile, backend: Exclude<HardwareBackend, 'auto'>) {

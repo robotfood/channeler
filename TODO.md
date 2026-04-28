@@ -32,3 +32,4 @@ Set up a GitHub Actions workflow that triggers on push to `main`:
 - [ ] Fix Intel QSV probe on Xeon/Unraid Docker when `/dev/dri` is passed through but FFmpeg reports unsupported picture structure/resolution/pixel format and falls back to CPU
 - [ ] Add hardware-accelerated VAAPI transcode mode and host capability checks
 - [ ] Add transcode session dashboard with current process/client health
+- [ ] Evaluate `node-av` for future in-process media pipelines or managed FFmpeg binary access; keep current child-process FFmpeg path unless it clearly reduces deployment/runtime risk
