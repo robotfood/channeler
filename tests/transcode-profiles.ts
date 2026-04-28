@@ -124,7 +124,7 @@ function cpuH264Args(height: number, videoBitrate: string, maxrate: string, bufs
     '-ac', '6',
     '-b:a', audioBitrate,
     '-ar', '48000',
-    '-af', 'dynaudnorm=f=150:g=15:p=0.9,surround=out_layout=5.1:level_in=1:level_out=1:lfe_low=120',
+    '-af', 'dynaudnorm=f=150:g=15:p=0.9,surround=chl_out=5.1:level_in=1:level_out=1:lfe_low=120',
   ]
 }
 
@@ -134,7 +134,7 @@ function hardwareH264Args(backend: Backend, height: number, videoBitrate: string
     '-ac', '6',
     '-b:a', audioBitrate,
     '-ar', '48000',
-    '-af', 'dynaudnorm=f=150:g=15:p=0.9,surround=out_layout=5.1:level_in=1:level_out=1:lfe_low=120',
+    '-af', 'dynaudnorm=f=150:g=15:p=0.9,surround=chl_out=5.1:level_in=1:level_out=1:lfe_low=120',
   ]
 
   if (backend === 'cpu') return cpuH264Args(height, videoBitrate, maxrate, bufsize, audioBitrate)
@@ -182,7 +182,7 @@ function hardwareFilteredH264Args(backend: Backend, filter: string, videoBitrate
     '-ac', '6',
     '-b:a', audioBitrate,
     '-ar', '48000',
-    '-af', 'dynaudnorm=f=150:g=15:p=0.9,surround=out_layout=5.1:level_in=1:level_out=1:lfe_low=120',
+    '-af', 'dynaudnorm=f=150:g=15:p=0.9,surround=chl_out=5.1:level_in=1:level_out=1:lfe_low=120',
   ]
 
   const fpsArgs = fps ? [
@@ -243,7 +243,7 @@ function profileArgs(profile: string, backend: Backend) {
         '-ac', '6',
         '-b:a', '384k',
         '-ar', '48000',
-        '-af', 'dynaudnorm=f=150:g=15:p=0.9,surround=out_layout=5.1:level_in=1:level_out=1:lfe_low=120',
+        '-af', 'dynaudnorm=f=150:g=15:p=0.9,surround=chl_out=5.1:level_in=1:level_out=1:lfe_low=120',
       ]
     case 'transcode_720p':
       return hardwareH264Args(backend, 720, '3500k', '4200k', '7000k', '384k')
