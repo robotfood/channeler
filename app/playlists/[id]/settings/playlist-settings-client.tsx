@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import type { PlaylistSettingsData } from '@/lib/app-data'
@@ -166,6 +166,30 @@ export default function PlaylistSettingsClient({ initialData, playlistId }: {
   const [proxyEpg, setProxyEpg] = useState(initialData.proxyEpg)
   const [saving, setSaving] = useState(false)
   const [toast, setToast] = useState('')
+  const [systemInfo, setSystemInfo] = useState<{
+    cpuCores: number
+    threading: string | number
+    backend: string
+    encoder: string
+  } | null>(null)
+
+  useEffect(() => {
+    async function fetchSystemInfo() {
+      try {
+        const res = await fetch('/api/transcode/status')
+        if (res.ok) {
+          const data = await res.json()
+          setSystemInfo({
+            cpuCores: data.recommendedBackend.cpuCores,
+            threading: data.recommendedBackend.threading,
+            backend: data.recommendedBackend.backend,
+            encoder: data.recommendedBackend.encoder,
+          })
+        }
+      } catch {}
+    }
+    fetchSystemInfo()
+  }, [])
 
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(''), 3000) }
   const useProxyPlayback = playbackProfile !== 'direct'
@@ -356,6 +380,14 @@ export default function PlaylistSettingsClient({ initialData, playlistId }: {
                   <option value="cpu">Force CPU fallback</option>
                 </select>
                 <p className="text-[10px] text-gray-500 dark:text-gray-400 mt-1">Controls how video is encoded for ALL profiles below. Auto validates hardware and falls back to CPU if needed.</p>
+                {systemInfo && (
+                  <div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 p-2 bg-white/50 dark:bg-black/20 rounded border border-blue-100/50 dark:border-blue-900/20 text-[10px] font-mono text-blue-600/80 dark:text-blue-400/80">
+                    <div className="flex justify-between"><span>Cores:</span> <span className="font-bold">{systemInfo.cpuCores}</span></div>
+                    <div className="flex justify-between"><span>Threads:</span> <span className="font-bold">{systemInfo.threading}</span></div>
+                    <div className="flex justify-between"><span>Detected:</span> <span className="font-bold uppercase">{systemInfo.backend}</span></div>
+                    <div className="flex justify-between"><span>Encoder:</span> <span className="font-bold">{systemInfo.encoder}</span></div>
+                  </div>
+                )}
               </div>
 
               <fieldset className="space-y-2 rounded-lg border border-gray-200 bg-white p-3 dark:border-gray-800 dark:bg-gray-950/30">

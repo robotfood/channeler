@@ -646,6 +646,8 @@ export function getTranscodeHardwareRecommendation() {
     backend,
     encoder: process.env.TRANSCODE_RECOMMENDED_ENCODER ?? (backend === 'cpu' ? 'libx264' : encoderForBackend(backend)),
     results: hardwareProbeResults,
+    cpuCores: os.cpus().length,
+    threading: transcodeThreads() || 'auto (all cores)',
   }
 }
 
