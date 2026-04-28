@@ -119,6 +119,14 @@ const PLAYBACK_PROFILES = [
     quality: 'Scale, Blend Interpolation',
   },
   {
+    value: 'transcode_720p60_hw',
+    label: '720p 60 FPS (Hardware Fast)',
+    detail: 'The fastest path to 60 FPS. Offloads deinterlacing and scaling to the GPU. Best for old CPUs.',
+    fps: '60',
+    res: '720p',
+    quality: 'Hardware VPP (Fastest)',
+  },
+  {
     value: 'smooth_1080p60',
     label: 'Smooth 1080p60',
     detail: 'Lightweight motion blending for a 60 FPS feel at 1080p.',

@@ -57,6 +57,7 @@ const PROFILES = [
   { value: 'clean_1080p', label: 'Clean 1080p' },
   { value: 'sharp_1080p', label: 'Sharp 1080p' },
   { value: 'smooth_720p60', label: 'Smooth 720p60' },
+  { value: 'transcode_720p60_hw', label: '720p 60 FPS (HW Fast)' },
   { value: 'sports_720p60', label: 'Sports 720p60' },
   { value: 'sports_lite_720p60', label: 'Sports Lite 60 FPS' },
 ]
@@ -87,6 +88,7 @@ const PLAYBACK_PROFILE_LABELS: Record<string, string> = {
   clean_1080p: 'Clean 1080p',
   sharp_1080p: 'Sharp 1080p',
   smooth_720p60: 'Smooth 720p60',
+  transcode_720p60_hw: '720p 60 FPS (HW Fast)',
   smooth_1080p60: 'Smooth 1080p60',
   sports_720p60: 'Sports 720p60',
   sports_lite_720p60: 'Sports Lite 60 FPS',

@@ -497,6 +497,32 @@ function profileArgs(profile: PlaybackProfile, backend: Exclude<HardwareBackend,
         '5000k', '6500k', '10000k', '384k',
         60
       )
+    case 'transcode_720p60_hw':
+      // Hardware-accelerated 60fps: Offloads deinterlacing AND scaling to the GPU.
+      // This is the "cheapest" path to 60fps for older CPUs.
+      if (backend === 'vaapi') {
+        return hardwareFilteredH264Args(
+          backend,
+          'hwupload,deinterlace_vaapi,scale_vaapi=w=-2:h=720:format=nv12',
+          '5000k', '6000k', '10000k', '384k',
+          60
+        )
+      }
+      if (backend === 'qsv') {
+        return hardwareFilteredH264Args(
+          backend,
+          'format=nv12,vpp_qsv=deinterlace=2:w=-2:h=720',
+          '5000k', '6000k', '10000k', '384k',
+          60
+        )
+      }
+      // Fallback to sports_lite if no hardware VPP available
+      return hardwareFilteredH264Args(
+        backend,
+        'yadif=mode=send_frame:parity=auto:deint=interlaced,scale=-2:720:flags=lanczos',
+        '4500k', '5500k', '9000k', '384k',
+        60
+      )
     case 'smooth_1080p60':
       return hardwareFilteredH264Args(
         backend,
