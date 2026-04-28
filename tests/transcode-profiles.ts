@@ -252,6 +252,7 @@ function profileArgs(profile: string, backend: Backend) {
     case 'smooth_720p60':
       return hardwareFilteredH264Args(
         backend,
+        // Using mi_mode=blend for performance on older hardware
         'scale=-2:720:flags=lanczos,minterpolate=fps=60:mi_mode=blend',
         '5000k', '6500k', '10000k', '160k',
         60
@@ -266,6 +267,7 @@ function profileArgs(profile: string, backend: Backend) {
     case 'sports_720p60':
       return hardwareFilteredH264Args(
         backend,
+        // Relying on yadif send_frame for 60fps; minterpolate removed for CPU efficiency
         'yadif=mode=send_frame:parity=auto:deint=interlaced,scale=-2:720:flags=lanczos,unsharp=5:5:0.35:3:3:0.2',
         '5500k', '7000k', '11000k', '160k',
         60

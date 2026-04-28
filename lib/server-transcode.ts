@@ -454,6 +454,8 @@ function profileArgs(profile: PlaybackProfile, backend: Exclude<HardwareBackend,
     case 'smooth_720p60':
       return hardwareFilteredH264Args(
         backend,
+        // Note: mi_mode=blend is used instead of mci to support older CPUs. 
+        // mci (motion compensation) is extremely heavy and prone to stuttering.
         'scale=-2:720:flags=lanczos,minterpolate=fps=60:mi_mode=blend',
         '5000k', '6500k', '10000k', '160k',
         60
@@ -468,6 +470,8 @@ function profileArgs(profile: PlaybackProfile, backend: Exclude<HardwareBackend,
     case 'sports_720p60':
       return hardwareFilteredH264Args(
         backend,
+        // Note: minterpolate removed here; yadif send_frame naturally produces 60fps 
+        // for 1080i sports feeds without the massive CPU overhead of optical flow.
         'yadif=mode=send_frame:parity=auto:deint=interlaced,scale=-2:720:flags=lanczos,unsharp=5:5:0.35:3:3:0.2',
         '5500k', '7000k', '11000k', '160k',
         60
