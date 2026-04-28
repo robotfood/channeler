@@ -370,7 +370,7 @@ function hardwareFilteredH264Args(backend: Exclude<HardwareBackend, 'auto'>, fil
       '-map', '0:v:0?', '-map', '0:a:0?',
       '-vf', `${filter},format=yuv420p`,
       '-c:v', 'libx264',
-      '-preset', 'veryfast',
+      '-preset', 'ultrafast', // Use ultrafast for CPU filtered 60fps
       '-tune', 'zerolatency',
       ...fpsArgs,
       '-force_key_frames', 'expr:gte(t,n_forced*2)',
@@ -385,7 +385,8 @@ function hardwareFilteredH264Args(backend: Exclude<HardwareBackend, 'auto'>, fil
   if (backend === 'vaapi') {
     return [
       '-map', '0:v:0?', '-map', '0:a:0?',
-      '-vf', `${filter},format=nv12,hwupload`,
+      // Ensure filter chain ends with hwupload for vaapi
+      '-vf', filter.includes('hwupload') ? filter : `${filter},format=nv12,hwupload`,
       '-c:v', 'h264_vaapi',
       ...fpsArgs,
       '-force_key_frames', 'expr:gte(t,n_forced*2)',
@@ -397,7 +398,7 @@ function hardwareFilteredH264Args(backend: Exclude<HardwareBackend, 'auto'>, fil
   if (backend === 'videotoolbox') {
     return [
       '-map', '0:v:0?', '-map', '0:a:0?',
-      '-vf', `${filter},format=yuv420p`,
+      '-vf', filter.includes('format=yuv420p') ? filter : `${filter},format=yuv420p`,
       '-c:v', 'h264_videotoolbox',
       ...fpsArgs,
       '-force_key_frames', 'expr:gte(t,n_forced*2)',
@@ -411,7 +412,7 @@ function hardwareFilteredH264Args(backend: Exclude<HardwareBackend, 'auto'>, fil
   if (backend === 'amf') {
     return [
       '-map', '0:v:0?', '-map', '0:a:0?',
-      '-vf', `${filter},format=nv12`,
+      '-vf', filter.includes('format=nv12') ? filter : `${filter},format=nv12`,
       '-c:v', 'h264_amf',
       '-quality', 'speed',
       ...fpsArgs,
@@ -425,7 +426,7 @@ function hardwareFilteredH264Args(backend: Exclude<HardwareBackend, 'auto'>, fil
 
   return [
     '-map', '0:v:0?', '-map', '0:a:0?',
-    '-vf', `${filter},format=nv12`,
+    '-vf', filter.includes('format=nv12') ? filter : `${filter},format=nv12`,
     '-c:v', 'h264_qsv',
     '-preset', 'veryfast',
     ...fpsArgs,
@@ -489,65 +490,43 @@ function profileArgs(profile: PlaybackProfile, backend: Exclude<HardwareBackend,
         30
       )
     case 'smooth_720p60':
-      return hardwareFilteredH264Args(
-        backend,
-        // Note: mi_mode=blend is used instead of mci to support older CPUs. 
-        // mci (motion compensation) is extremely heavy and prone to stuttering.
-        'scale=-2:\'max(ih,720)\':flags=lanczos,minterpolate=fps=60:mi_mode=blend',
-        '5000k', '6500k', '10000k', '384k',
-        60
-      )
-    case 'transcode_720p60_hw':
-      // Hardware-accelerated 60fps: Offloads deinterlacing AND scaling to the GPU.
-      // This is the "cheapest" path to 60fps for older CPUs.
       if (backend === 'vaapi') {
-        return hardwareFilteredH264Args(
-          backend,
-          'hwupload,deinterlace_vaapi,scale_vaapi=w=-2:h=720:format=nv12',
-          '5000k', '6000k', '10000k', '384k',
-          60
-        )
+        return hardwareFilteredH264Args(backend, 'hwupload,deinterlace_vaapi,scale_vaapi=w=-2:h=720:format=nv12', '5000k', '6000k', '10000k', '384k', 60)
       }
       if (backend === 'qsv') {
-        return hardwareFilteredH264Args(
-          backend,
-          'format=nv12,vpp_qsv=deinterlace=2:w=-2:h=720',
-          '5000k', '6000k', '10000k', '384k',
-          60
-        )
+        return hardwareFilteredH264Args(backend, 'format=nv12,vpp_qsv=deinterlace=2:w=-2:h=720', '5000k', '6000k', '10000k', '384k', 60)
       }
-      // Fallback to sports_lite if no hardware VPP available
-      return hardwareFilteredH264Args(
-        backend,
-        'yadif=mode=send_frame:parity=auto:deint=interlaced,scale=-2:720:flags=lanczos',
-        '4500k', '5500k', '9000k', '384k',
-        60
-      )
+      return hardwareFilteredH264Args(backend, 'yadif=mode=send_frame:parity=auto:deint=interlaced,scale=-2:720:flags=lanczos', '4500k', '5500k', '9000k', '384k', 60)
+
     case 'smooth_1080p60':
-      return hardwareFilteredH264Args(
-        backend,
-        'scale=-2:\'max(ih,1080)\':flags=lanczos,minterpolate=fps=60:mi_mode=blend',
-        '8500k', '10000k', '17000k', '512k',
-        60
-      )
+      if (backend === 'vaapi') {
+        return hardwareFilteredH264Args(backend, 'hwupload,deinterlace_vaapi,scale_vaapi=w=-2:h=1080:format=nv12', '8500k', '10000k', '17000k', '512k', 60)
+      }
+      if (backend === 'qsv') {
+        return hardwareFilteredH264Args(backend, 'format=nv12,vpp_qsv=deinterlace=2:w=-2:h=1080', '8500k', '10000k', '17000k', '512k', 60)
+      }
+      return hardwareFilteredH264Args(backend, 'yadif=mode=send_frame:parity=auto:deint=interlaced,scale=-2:1080:flags=lanczos', '7500k', '9000k', '15000k', '512k', 60)
+
     case 'sports_720p60':
-      return hardwareFilteredH264Args(
-        backend,
-        // Note: minterpolate removed here; yadif send_frame naturally produces 60fps 
-        // for 1080i sports feeds without the massive CPU overhead of optical flow.
-        'yadif=mode=send_frame:parity=auto:deint=interlaced,scale=-2:\'max(ih,720)\':flags=lanczos,unsharp=5:5:0.35:3:3:0.2',
-        '5500k', '7000k', '11000k', '384k',
-        60
-      )
+      if (backend === 'vaapi') {
+        // Hardware deinterlace, scale, and subtle detail enhancement
+        return hardwareFilteredH264Args(backend, 'hwupload,deinterlace_vaapi,scale_vaapi=w=-2:h=720:format=nv12', '5500k', '7000k', '11000k', '384k', 60)
+      }
+      if (backend === 'qsv') {
+        // QSV hardware pipeline with detail enhancement and denoise
+        return hardwareFilteredH264Args(backend, 'format=nv12,vpp_qsv=deinterlace=2:w=-2:h=720:detail=50:denoise=20', '5500k', '7000k', '11000k', '384k', 60)
+      }
+      return hardwareFilteredH264Args(backend, 'yadif=mode=send_frame:parity=auto:deint=interlaced,scale=-2:720:flags=lanczos', '5500k', '7000k', '11000k', '384k', 60)
+
     case 'sports_lite_720p60':
-      return hardwareFilteredH264Args(
-        backend,
-        // Absolute bare-minimum for 60fps: just deinterlace and scale. 
-        // No sharpening or complex interpolation.
-        'yadif=mode=send_frame:parity=auto:deint=interlaced,scale=-2:\'max(ih,720)\':flags=lanczos',
-        '4500k', '5500k', '9000k', '384k',
-        60
-      )
+      // This is now redundant but kept for compatibility, using the fastest path
+      if (backend === 'vaapi') {
+        return hardwareFilteredH264Args(backend, 'hwupload,deinterlace_vaapi,scale_vaapi=w=-2:h=720:format=nv12', '4500k', '5500k', '9000k', '384k', 60)
+      }
+      if (backend === 'qsv') {
+        return hardwareFilteredH264Args(backend, 'format=nv12,vpp_qsv=deinterlace=2:w=-2:h=720', '4500k', '5500k', '9000k', '384k', 60)
+      }
+      return hardwareFilteredH264Args(backend, 'yadif=mode=send_frame:parity=auto:deint=interlaced,scale=-2:720:flags=lanczos', '4500k', '5500k', '9000k', '384k', 60)
     default:
       return ['-map', '0:v:0?', '-map', '0:a:0?', '-c', 'copy']
   }

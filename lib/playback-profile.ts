@@ -11,7 +11,6 @@ export const PLAYBACK_PROFILES = [
   'clean_1080p',
   'sharp_1080p',
   'smooth_720p60',
-  'transcode_720p60_hw',
   'smooth_1080p60',
   'sports_720p60',
   'sports_lite_720p60',
