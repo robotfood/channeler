@@ -265,7 +265,8 @@ function hlsArgs(outputDir: string) {
 function cpuH264Args(height: number, videoBitrate: string, maxrate: string, bufsize: string, audioBitrate: string) {
   return [
     '-map', '0:v:0?', '-map', '0:a:0?',
-    '-vf', `scale=-2:${height}:flags=lanczos,format=yuv420p`,
+    // Use max(ih, height) to upscale low-res but never downscale high-res
+    '-vf', `scale=-2:'max(ih,${height})':flags=lanczos,format=yuv420p`,
     '-c:v', 'libx264',
     '-preset', 'veryfast',
     '-tune', 'zerolatency',
@@ -296,10 +297,10 @@ function hardwareH264Args(backend: Exclude<HardwareBackend, 'auto'>, height: num
   if (backend === 'vaapi') {
     return [
       '-map', '0:v:0?', '-map', '0:a:0?',
-      // Use hardware scaling (scale_vaapi) for 4K to save CPU, otherwise use software lanczos/neighbor
+      // Use hardware scaling (scale_vaapi) for 4K, otherwise use software scaler with 'max(ih, height)' logic
       '-vf', height >= 2160 
         ? `hwupload,scale_vaapi=w=-2:h=${height}:format=nv12` 
-        : `scale=-2:${height}:flags=${scaleFlags},format=nv12,hwupload`,
+        : `scale=-2:'max(ih,${height})':flags=${scaleFlags},format=nv12,hwupload`,
       '-c:v', 'h264_vaapi',
       '-force_key_frames', 'expr:gte(t,n_forced*2)',
       '-qp', height >= 2160 ? '18' : height >= 1080 ? '21' : '23',
@@ -310,7 +311,7 @@ function hardwareH264Args(backend: Exclude<HardwareBackend, 'auto'>, height: num
   if (backend === 'videotoolbox') {
     return [
       '-map', '0:v:0?', '-map', '0:a:0?',
-      '-vf', `scale=-2:${height}:flags=${scaleFlags},format=yuv420p`,
+      '-vf', `scale=-2:'max(ih,${height})':flags=${scaleFlags},format=yuv420p`,
       '-c:v', 'h264_videotoolbox',
       '-force_key_frames', 'expr:gte(t,n_forced*2)',
       '-b:v', videoBitrate,
@@ -323,7 +324,7 @@ function hardwareH264Args(backend: Exclude<HardwareBackend, 'auto'>, height: num
   if (backend === 'amf') {
     return [
       '-map', '0:v:0?', '-map', '0:a:0?',
-      '-vf', `scale=-2:${height}:flags=${scaleFlags},format=nv12`,
+      '-vf', `scale=-2:'max(ih,${height})':flags=${scaleFlags},format=nv12`,
       '-c:v', 'h264_amf',
       '-quality', 'speed',
       '-force_key_frames', 'expr:gte(t,n_forced*2)',
@@ -338,7 +339,7 @@ function hardwareH264Args(backend: Exclude<HardwareBackend, 'auto'>, height: num
     '-map', '0:v:0?', '-map', '0:a:0?',
     '-vf', height >= 2160
       ? `format=nv12,vpp_qsv=w=-2:h=${height}`
-      : `scale=-2:${height}:flags=${scaleFlags},format=nv12`,
+      : `scale=-2:'max(ih,${height})':flags=${scaleFlags},format=nv12`,
     '-c:v', 'h264_qsv',
     '-preset', 'veryfast',
     '-force_key_frames', 'expr:gte(t,n_forced*2)',

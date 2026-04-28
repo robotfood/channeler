@@ -111,7 +111,7 @@ function ffmpegEncoders() {
 function cpuH264Args(height: number, videoBitrate: string, maxrate: string, bufsize: string, audioBitrate: string) {
   return [
     '-map', '0:v:0?', '-map', '1:a:0?',
-    '-vf', `scale=-2:${height}:flags=lanczos,format=yuv420p`,
+    '-vf', `scale=-2:'max(ih,${height})':flags=lanczos,format=yuv420p`,
     '-c:v', 'libx264',
     '-preset', 'veryfast',
     '-tune', 'zerolatency',
@@ -121,54 +121,70 @@ function cpuH264Args(height: number, videoBitrate: string, maxrate: string, bufs
     '-maxrate', maxrate,
     '-bufsize', bufsize,
     '-c:a', 'aac',
+    '-ac', '6',
     '-b:a', audioBitrate,
+    '-ar', '48000',
+    '-af', 'dynaudnorm=f=150:g=15:p=0.9,surround=out_layout=5.1:level_in=1:level_out=1:lfe_low=120',
   ]
 }
 
 function hardwareH264Args(backend: Backend, height: number, videoBitrate: string, maxrate: string, bufsize: string, audioBitrate: string) {
+  const audioArgs = [
+    '-c:a', 'aac',
+    '-ac', '6',
+    '-b:a', audioBitrate,
+    '-ar', '48000',
+    '-af', 'dynaudnorm=f=150:g=15:p=0.9,surround=out_layout=5.1:level_in=1:level_out=1:lfe_low=120',
+  ]
+
   if (backend === 'cpu') return cpuH264Args(height, videoBitrate, maxrate, bufsize, audioBitrate)
 
   if (backend === 'vaapi') {
     return [
       '-map', '0:v:0?', '-map', '1:a:0?',
-      '-vf', `scale=-2:${height}:flags=lanczos,format=nv12,hwupload`,
+      '-vf', `scale=-2:'max(ih,${height})':flags=lanczos,format=nv12,hwupload`,
       '-c:v', encoderForBackend(backend),
       '-force_key_frames', 'expr:gte(t,n_forced*2)',
       '-qp', height >= 2160 ? '18' : height >= 1080 ? '21' : '23',
-      '-c:a', 'aac',
-      '-b:a', audioBitrate,
+      ...audioArgs,
     ]
   }
 
   if (backend === 'videotoolbox') {
     return [
       '-map', '0:v:0?', '-map', '1:a:0?',
-      '-vf', `scale=-2:${height}:flags=lanczos,format=yuv420p`,
+      '-vf', `scale=-2:'max(ih,${height})':flags=lanczos,format=yuv420p`,
       '-c:v', encoderForBackend(backend),
       '-force_key_frames', 'expr:gte(t,n_forced*2)',
       '-b:v', videoBitrate,
       '-maxrate', maxrate,
       '-bufsize', bufsize,
-      '-c:a', 'aac',
-      '-b:a', audioBitrate,
+      ...audioArgs,
     ]
   }
 
   return [
     '-map', '0:v:0?', '-map', '1:a:0?',
-    '-vf', `scale=-2:${height}:flags=lanczos,format=nv12`,
+    '-vf', `scale=-2:'max(ih,${height})':flags=lanczos,format=nv12`,
     '-c:v', encoderForBackend(backend),
     ...(backend === 'qsv' ? ['-preset', 'veryfast'] : ['-quality', 'speed']),
     '-force_key_frames', 'expr:gte(t,n_forced*2)',
     '-b:v', videoBitrate,
     '-maxrate', maxrate,
     '-bufsize', bufsize,
-    '-c:a', 'aac',
-    '-b:a', audioBitrate,
+    ...audioArgs,
   ]
 }
 
 function hardwareFilteredH264Args(backend: Backend, filter: string, videoBitrate: string, maxrate: string, bufsize: string, audioBitrate: string, fps = 60) {
+  const audioArgs = [
+    '-c:a', 'aac',
+    '-ac', '6',
+    '-b:a', audioBitrate,
+    '-ar', '48000',
+    '-af', 'dynaudnorm=f=150:g=15:p=0.9,surround=out_layout=5.1:level_in=1:level_out=1:lfe_low=120',
+  ]
+
   if (backend === 'cpu') {
     return [
       '-map', '0:v:0?', '-map', '1:a:0?',
@@ -183,8 +199,7 @@ function hardwareFilteredH264Args(backend: Backend, filter: string, videoBitrate
       '-b:v', videoBitrate,
       '-maxrate', maxrate,
       '-bufsize', bufsize,
-      '-c:a', 'aac',
-      '-b:a', audioBitrate,
+      ...audioArgs,
     ]
   }
 
@@ -197,8 +212,7 @@ function hardwareFilteredH264Args(backend: Backend, filter: string, videoBitrate
       '-g', String(fps * 2),
       '-force_key_frames', 'expr:gte(t,n_forced*2)',
       '-qp', '23',
-      '-c:a', 'aac',
-      '-b:a', audioBitrate,
+      ...audioArgs,
     ]
   }
 
@@ -213,8 +227,7 @@ function hardwareFilteredH264Args(backend: Backend, filter: string, videoBitrate
     '-b:v', videoBitrate,
     '-maxrate', maxrate,
     '-bufsize', bufsize,
-    '-c:a', 'aac',
-    '-b:a', audioBitrate,
+    ...audioArgs,
   ]
 }
 
@@ -225,22 +238,99 @@ function profileArgs(profile: string, backend: Backend) {
         '-map', '0:v:0?', '-map', '0:a:0?',
         '-c:v', 'copy',
         '-c:a', 'aac',
-        '-b:a', '192k',
+        '-ac', '6',
+        '-b:a', '384k',
         '-ar', '48000',
-        '-af', 'dynaudnorm=f=150:g=15:p=0.9',
+        '-af', 'dynaudnorm=f=150:g=15:p=0.9,surround=out_layout=5.1:level_in=1:level_out=1:lfe_low=120',
       ]
     case 'transcode_720p':
-      return hardwareH264Args(backend, 720, '3500k', '4200k', '7000k', '128k')
+      return hardwareH264Args(backend, 720, '3500k', '4200k', '7000k', '384k')
     case 'transcode_1080p':
-      return hardwareH264Args(backend, 1080, '6000k', '7200k', '12000k', '160k')
+      return hardwareH264Args(backend, 1080, '6000k', '7200k', '12000k', '512k')
     case 'transcode_4k':
-      return hardwareH264Args(backend, 2160, '22000k', '28000k', '44000k', '192k')
+      return hardwareH264Args(backend, 2160, '22000k', '28000k', '44000k', '640k')
+    case 'transcode_4k_fast':
+      return hardwareH264Args(backend, 2160, '20000k', '26000k', '40000k', '640k')
     case 'enhanced_1080p':
       return hardwareFilteredH264Args(
         backend,
         'yadif=mode=0:parity=auto:deint=interlaced,scale=-2:1080:flags=lanczos,unsharp=5:5:0.45:3:3:0.25',
-        '6500k', '8000k', '13000k', '160k',
+        '6500k', '8000k', '13000k', '512k',
         30
+      )
+    case 'clean_1080p':
+      return hardwareFilteredH264Args(
+        backend,
+        'yadif=mode=0:parity=auto:deint=interlaced,hqdn3d=1.5:1.5:4:4,scale=-2:1080:flags=lanczos,unsharp=3:3:0.25:3:3:0.12',
+        '6000k', '7500k', '12000k', '512k',
+        30
+      )
+    case 'sharp_1080p':
+      return hardwareFilteredH264Args(
+        backend,
+        'yadif=mode=0:parity=auto:deint=interlaced,scale=-2:1080:flags=lanczos,unsharp=7:7:0.65:5:5:0.35',
+        '6500k', '8500k', '13000k', '512k',
+        30
+      )
+    case 'smooth_720p60':
+      return hardwareFilteredH264Args(
+        backend,
+        // Using mi_mode=blend for performance on older hardware
+        'scale=-2:720:flags=lanczos,minterpolate=fps=60:mi_mode=blend',
+        '5000k', '6500k', '10000k', '384k',
+        60
+      )
+    case 'smooth_1080p60':
+      return hardwareFilteredH264Args(
+        backend,
+        'scale=-2:1080:flags=lanczos,minterpolate=fps=60:mi_mode=blend',
+        '8500k', '10000k', '17000k', '512k',
+        60
+      )
+    case 'sports_720p60':
+      return hardwareFilteredH264Args(
+        backend,
+        // Relying on yadif send_frame for 60fps; minterpolate removed for CPU efficiency
+        'yadif=mode=send_frame:parity=auto:deint=interlaced,scale=-2:720:flags=lanczos,unsharp=5:5:0.35:3:3:0.2',
+        '5500k', '7000k', '11000k', '384k',
+        60
+      )
+    case 'clean_1080p':
+      return hardwareFilteredH264Args(
+        backend,
+        'yadif=mode=0:parity=auto:deint=interlaced,hqdn3d=1.5:1.5:4:4,scale=-2:1080:flags=lanczos,unsharp=3:3:0.25:3:3:0.12',
+        '6000k', '7500k', '12000k', '512k',
+        30
+      )
+    case 'sharp_1080p':
+      return hardwareFilteredH264Args(
+        backend,
+        'yadif=mode=0:parity=auto:deint=interlaced,scale=-2:1080:flags=lanczos,unsharp=7:7:0.65:5:5:0.35',
+        '6500k', '8500k', '13000k', '512k',
+        30
+      )
+    case 'smooth_720p60':
+      return hardwareFilteredH264Args(
+        backend,
+        // Using mi_mode=blend for performance on older hardware
+        'scale=-2:720:flags=lanczos,minterpolate=fps=60:mi_mode=blend',
+        '5000k', '6500k', '10000k', '384k',
+        60
+      )
+    case 'smooth_1080p60':
+      return hardwareFilteredH264Args(
+        backend,
+        'scale=-2:1080:flags=lanczos,minterpolate=fps=60:mi_mode=blend',
+        '8500k', '10000k', '17000k', '512k',
+        60
+      )
+    case 'sports_720p60':
+      return hardwareFilteredH264Args(
+        backend,
+        // Relying on yadif send_frame for 60fps; minterpolate removed for CPU efficiency
+        'yadif=mode=send_frame:parity=auto:deint=interlaced,scale=-2:720:flags=lanczos,unsharp=5:5:0.35:3:3:0.2',
+        '5500k', '7000k', '11000k', '384k',
+        60
       )
     case 'clean_1080p':
       return hardwareFilteredH264Args(
