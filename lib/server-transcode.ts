@@ -255,9 +255,8 @@ function hlsArgs(outputDir: string, segmentTime = 2) {
   return [
     '-f', 'hls',
     '-hls_time', String(segmentTime),
-    '-hls_init_time', '1',
     '-hls_list_size', '10',
-    '-hls_flags', 'delete_segments+append_list+omit_endlist+program_date_time+independent_segments',
+    '-hls_flags', 'delete_segments+append_list+omit_endlist+program_date_time',
     '-hls_segment_filename', path.join(outputDir, 'segment_%06d.ts'),
     path.join(outputDir, 'index.m3u8'),
   ]
@@ -267,7 +266,8 @@ function cpuH264Args(height: number, videoBitrate: string, maxrate: string, bufs
   return [
     '-map', '0:v:0?', '-map', '0:a:0?',
     // Use max(ih, height) to upscale low-res but never downscale high-res
-    '-vf', `scale=-2:'max(ih,${height})':flags=lanczos,format=yuv420p`,
+    // Note: Comma in 'max(ih\,height)' must be escaped because it's inside a filter chain
+    '-vf', `scale=-2:'max(ih\\,${height})':flags=lanczos,format=yuv420p`,
     '-c:v', 'libx264',
     '-preset', 'veryfast',
     '-tune', 'zerolatency',
@@ -301,7 +301,7 @@ function hardwareH264Args(backend: Exclude<HardwareBackend, 'auto'>, height: num
       // Use hardware scaling (scale_vaapi) for 4K, otherwise use software scaler with 'max(ih, height)' logic
       '-vf', height >= 2160 
         ? `hwupload,scale_vaapi=w=-2:h=${height}:format=nv12` 
-        : `scale=-2:'max(ih,${height})':flags=${scaleFlags},format=nv12,hwupload`,
+        : `scale=-2:'max(ih\\,${height})':flags=${scaleFlags},format=nv12,hwupload`,
       '-c:v', 'h264_vaapi',
       '-force_key_frames', 'expr:gte(t,n_forced*2)',
       '-qp', height >= 2160 ? '18' : height >= 1080 ? '21' : '23',
@@ -312,10 +312,10 @@ function hardwareH264Args(backend: Exclude<HardwareBackend, 'auto'>, height: num
   if (backend === 'videotoolbox') {
     return [
       '-map', '0:v:0?', '-map', '0:a:0?',
-      '-vf', `scale=-2:'max(ih,${height})':flags=${scaleFlags},format=yuv420p`,
+      // Use scale_vt for Apple hardware scaling
+      '-vf', `scale_vt=w=-2:h=${height}:color_matrix=bt709`,
       '-c:v', 'h264_videotoolbox',
       '-realtime', 'true',
-      '-prio_speed', '1',
       '-force_key_frames', 'expr:gte(t,n_forced*2)',
       '-b:v', videoBitrate,
       '-maxrate', maxrate,
@@ -327,7 +327,7 @@ function hardwareH264Args(backend: Exclude<HardwareBackend, 'auto'>, height: num
   if (backend === 'amf') {
     return [
       '-map', '0:v:0?', '-map', '0:a:0?',
-      '-vf', `scale=-2:'max(ih,${height})':flags=${scaleFlags},format=nv12`,
+      '-vf', `scale=-2:'max(ih\\,${height})':flags=${scaleFlags},format=nv12`,
       '-c:v', 'h264_amf',
       '-quality', 'speed',
       '-force_key_frames', 'expr:gte(t,n_forced*2)',
@@ -342,7 +342,7 @@ function hardwareH264Args(backend: Exclude<HardwareBackend, 'auto'>, height: num
     '-map', '0:v:0?', '-map', '0:a:0?',
     '-vf', height >= 2160
       ? `format=nv12,vpp_qsv=w=-2:h=${height}`
-      : `scale=-2:'max(ih,${height})':flags=${scaleFlags},format=nv12`,
+      : `scale=-2:'max(ih\\,${height})':flags=${scaleFlags},format=nv12`,
     '-c:v', 'h264_qsv',
     '-preset', 'veryfast',
     '-force_key_frames', 'expr:gte(t,n_forced*2)',
@@ -401,7 +401,10 @@ function hardwareFilteredH264Args(backend: Exclude<HardwareBackend, 'auto'>, fil
   if (backend === 'videotoolbox') {
     return [
       '-map', '0:v:0?', '-map', '0:a:0?',
-      '-vf', filter.includes('format=yuv420p') ? filter : `${filter},format=yuv420p`,
+      // Use yadif_videotoolbox for Metal-accelerated deinterlacing if requested in filter
+      '-vf', filter.includes('yadif') 
+        ? filter.replace(/yadif=[^,]+/, 'yadif_videotoolbox').replace(/scale=[^,]+/, 'scale_vt')
+        : filter.replace(/scale=[^,]+/, 'scale_vt'),
       '-c:v', 'h264_videotoolbox',
       ...fpsArgs,
       '-force_key_frames', 'expr:gte(t,n_forced*2)',
@@ -474,21 +477,21 @@ function profileArgs(profile: PlaybackProfile, backend: Exclude<HardwareBackend,
     case 'enhanced_1080p':
       return hardwareFilteredH264Args(
         backend,
-        'yadif=mode=0:parity=auto:deint=interlaced,scale=-2:\'max(ih,1080)\':flags=lanczos,unsharp=5:5:0.45:3:3:0.25',
+        'yadif=mode=0:parity=auto:deint=interlaced,scale=-2:\'max(ih\\,1080)\':flags=lanczos,unsharp=5:5:0.45:3:3:0.25',
         '6500k', '8000k', '13000k', '512k',
         30 // default fps for non-smooth profiles
       )
     case 'clean_1080p':
       return hardwareFilteredH264Args(
         backend,
-        'yadif=mode=0:parity=auto:deint=interlaced,hqdn3d=1.5:1.5:4:4,scale=-2:\'max(ih,1080)\':flags=lanczos,unsharp=3:3:0.25:3:3:0.12',
+        'yadif=mode=0:parity=auto:deint=interlaced,hqdn3d=1.5:1.5:4:4,scale=-2:\'max(ih\\,1080)\':flags=lanczos,unsharp=3:3:0.25:3:3:0.12',
         '6000k', '7500k', '12000k', '512k',
         30
       )
     case 'sharp_1080p':
       return hardwareFilteredH264Args(
         backend,
-        'yadif=mode=0:parity=auto:deint=interlaced,scale=-2:\'max(ih,1080)\':flags=lanczos,unsharp=7:7:0.65:5:5:0.35',
+        'yadif=mode=0:parity=auto:deint=interlaced,scale=-2:\'max(ih\\,1080)\':flags=lanczos,unsharp=7:7:0.65:5:5:0.35',
         '6500k', '8500k', '13000k', '512k',
         30
       )
@@ -541,6 +544,7 @@ function ffmpegArgs(sourceUrl: string, outputDir: string, profile: PlaybackProfi
     '-loglevel', 'warning',
     '-nostdin',
     '-fflags', '+genpts',
+    ...(backend === 'videotoolbox' ? ['-hwaccel', 'videotoolbox'] : []),
     ...(backend === 'vaapi' ? vaapiDeviceArgs() : []),
     ...(backend === 'qsv' ? qsvDeviceArgs() : []),
     ...threadingArgs(),

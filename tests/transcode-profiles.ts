@@ -111,7 +111,7 @@ function ffmpegEncoders() {
 function cpuH264Args(height: number, videoBitrate: string, maxrate: string, bufsize: string, audioBitrate: string) {
   return [
     '-map', '0:v:0?', '-map', '1:a:0?',
-    '-vf', `scale=-2:'max(ih,${height})':flags=lanczos,format=yuv420p`,
+    '-vf', `scale=-2:'max(ih\\,${height})':flags=lanczos,format=yuv420p`,
     '-c:v', 'libx264',
     '-preset', 'veryfast',
     '-tune', 'zerolatency',
@@ -142,7 +142,7 @@ function hardwareH264Args(backend: Backend, height: number, videoBitrate: string
   if (backend === 'vaapi') {
     return [
       '-map', '0:v:0?', '-map', '1:a:0?',
-      '-vf', `scale=-2:'max(ih,${height})':flags=lanczos,format=nv12,hwupload`,
+      '-vf', `scale=-2:'max(ih\\,${height})':flags=lanczos,format=nv12,hwupload`,
       '-c:v', encoderForBackend(backend),
       '-force_key_frames', 'expr:gte(t,n_forced*2)',
       '-qp', height >= 2160 ? '18' : height >= 1080 ? '21' : '23',
@@ -153,7 +153,7 @@ function hardwareH264Args(backend: Backend, height: number, videoBitrate: string
   if (backend === 'videotoolbox') {
     return [
       '-map', '0:v:0?', '-map', '1:a:0?',
-      '-vf', `scale=-2:'max(ih,${height})':flags=lanczos,format=yuv420p`,
+      '-vf', `scale=-2:'max(ih\\,${height})':flags=lanczos,format=yuv420p`,
       '-c:v', encoderForBackend(backend),
       '-realtime', 'true',
       '-prio_speed', '1',
@@ -167,7 +167,7 @@ function hardwareH264Args(backend: Backend, height: number, videoBitrate: string
 
   return [
     '-map', '0:v:0?', '-map', '1:a:0?',
-    '-vf', `scale=-2:'max(ih,${height})':flags=lanczos,format=nv12`,
+    '-vf', `scale=-2:'max(ih\\,${height})':flags=lanczos,format=nv12`,
     '-c:v', encoderForBackend(backend),
     ...(backend === 'qsv' ? ['-preset', 'veryfast'] : ['-quality', 'speed']),
     '-force_key_frames', 'expr:gte(t,n_forced*2)',
@@ -264,21 +264,21 @@ function profileArgs(profile: string, backend: Backend) {
     case 'enhanced_1080p':
       return hardwareFilteredH264Args(
         backend,
-        'yadif=mode=0:parity=auto:deint=interlaced,scale=-2:\'max(ih,1080)\':flags=lanczos,unsharp=5:5:0.45:3:3:0.25',
+        'yadif=mode=0:parity=auto:deint=interlaced,scale=-2:\'max(ih\\,1080)\':flags=lanczos,unsharp=5:5:0.45:3:3:0.25',
         '6500k', '8000k', '13000k', '512k',
         30
       )
     case 'clean_1080p':
       return hardwareFilteredH264Args(
         backend,
-        'yadif=mode=0:parity=auto:deint=interlaced,hqdn3d=1.5:1.5:4:4,scale=-2:\'max(ih,1080)\':flags=lanczos,unsharp=3:3:0.25:3:3:0.12',
+        'yadif=mode=0:parity=auto:deint=interlaced,hqdn3d=1.5:1.5:4:4,scale=-2:\'max(ih\\,1080)\':flags=lanczos,unsharp=3:3:0.25:3:3:0.12',
         '6000k', '7500k', '12000k', '512k',
         30
       )
     case 'sharp_1080p':
       return hardwareFilteredH264Args(
         backend,
-        'yadif=mode=0:parity=auto:deint=interlaced,scale=-2:\'max(ih,1080)\':flags=lanczos,unsharp=7:7:0.65:5:5:0.35',
+        'yadif=mode=0:parity=auto:deint=interlaced,scale=-2:\'max(ih\\,1080)\':flags=lanczos,unsharp=7:7:0.65:5:5:0.35',
         '6500k', '8500k', '13000k', '512k',
         30
       )
