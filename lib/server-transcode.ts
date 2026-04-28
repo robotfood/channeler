@@ -279,13 +279,16 @@ function cpuH264Args(height: number, videoBitrate: string, maxrate: string, bufs
   ]
 }
 
-function hardwareH264Args(backend: Exclude<HardwareBackend, 'auto'>, height: number, videoBitrate: string, maxrate: string, bufsize: string, audioBitrate: string) {
+function hardwareH264Args(backend: Exclude<HardwareBackend, 'auto'>, height: number, videoBitrate: string, maxrate: string, bufsize: string, audioBitrate: string, scaleFlags = 'lanczos') {
   if (backend === 'cpu') return cpuH264Args(height, videoBitrate, maxrate, bufsize, audioBitrate)
 
   if (backend === 'vaapi') {
     return [
       '-map', '0:v:0?', '-map', '0:a:0?',
-      '-vf', `scale=-2:${height}:flags=lanczos,format=nv12,hwupload`,
+      // Use hardware scaling (scale_vaapi) for 4K to save CPU, otherwise use software lanczos/neighbor
+      '-vf', height >= 2160 
+        ? `hwupload,scale_vaapi=w=-2:h=${height}:format=nv12` 
+        : `scale=-2:${height}:flags=${scaleFlags},format=nv12,hwupload`,
       '-c:v', 'h264_vaapi',
       '-force_key_frames', 'expr:gte(t,n_forced*2)',
       '-qp', height >= 2160 ? '18' : height >= 1080 ? '21' : '23',
@@ -297,7 +300,7 @@ function hardwareH264Args(backend: Exclude<HardwareBackend, 'auto'>, height: num
   if (backend === 'videotoolbox') {
     return [
       '-map', '0:v:0?', '-map', '0:a:0?',
-      '-vf', `scale=-2:${height}:flags=lanczos,format=yuv420p`,
+      '-vf', `scale=-2:${height}:flags=${scaleFlags},format=yuv420p`,
       '-c:v', 'h264_videotoolbox',
       '-force_key_frames', 'expr:gte(t,n_forced*2)',
       '-b:v', videoBitrate,
@@ -311,7 +314,7 @@ function hardwareH264Args(backend: Exclude<HardwareBackend, 'auto'>, height: num
   if (backend === 'amf') {
     return [
       '-map', '0:v:0?', '-map', '0:a:0?',
-      '-vf', `scale=-2:${height}:flags=lanczos,format=nv12`,
+      '-vf', `scale=-2:${height}:flags=${scaleFlags},format=nv12`,
       '-c:v', 'h264_amf',
       '-quality', 'speed',
       '-force_key_frames', 'expr:gte(t,n_forced*2)',
@@ -325,7 +328,9 @@ function hardwareH264Args(backend: Exclude<HardwareBackend, 'auto'>, height: num
 
   return [
     '-map', '0:v:0?', '-map', '0:a:0?',
-    '-vf', `scale=-2:${height}:flags=lanczos,format=nv12`,
+    '-vf', height >= 2160
+      ? `format=nv12,vpp_qsv=w=-2:h=${height}`
+      : `scale=-2:${height}:flags=${scaleFlags},format=nv12`,
     '-c:v', 'h264_qsv',
     '-preset', 'veryfast',
     '-force_key_frames', 'expr:gte(t,n_forced*2)',
@@ -430,6 +435,10 @@ function profileArgs(profile: PlaybackProfile, backend: Exclude<HardwareBackend,
       return hardwareH264Args(backend, 1080, '6000k', '7200k', '12000k', '160k')
     case 'transcode_4k':
       return hardwareH264Args(backend, 2160, '22000k', '28000k', '44000k', '192k')
+    case 'transcode_4k_fast':
+      // Pixel doubling trick: using 'neighbor' scaling is extremely fast 
+      // and maintains 1080p sharpness without blurring during the 4K upscale.
+      return hardwareH264Args(backend, 2160, '20000k', '26000k', '40000k', '192k', 'neighbor')
     case 'enhanced_1080p':
       return hardwareFilteredH264Args(
         backend,

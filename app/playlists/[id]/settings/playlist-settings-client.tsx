@@ -71,6 +71,14 @@ const PLAYBACK_PROFILES = [
     quality: 'Lanczos scaling',
   },
   {
+    value: 'transcode_4k_fast',
+    label: '4K (Pixel Doubling)',
+    detail: 'Fastest 4K upscale using integer scaling. Sharp look, no blurring, lowest CPU cost.',
+    fps: 'Source',
+    res: '4K',
+    quality: 'Nearest Neighbor Scaling',
+  },
+  {
     value: 'enhanced_1080p',
     label: 'Enhanced 1080p',
     detail: 'Deinterlaces, scales, and lightly sharpens to improve soft or interlaced feeds.',

@@ -53,6 +53,7 @@ const PLAYBACK_PROFILE_LABELS: Record<string, string> = {
   transcode_720p: '720p Transcode',
   transcode_1080p: '1080p Transcode',
   transcode_4k: '4K Transcode',
+  transcode_4k_fast: '4K (Pixel Doubling)',
   enhanced_1080p: 'Enhanced 1080p',
   clean_1080p: 'Clean 1080p',
   sharp_1080p: 'Sharp 1080p',
