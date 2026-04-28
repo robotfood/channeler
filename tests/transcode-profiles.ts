@@ -155,6 +155,8 @@ function hardwareH264Args(backend: Backend, height: number, videoBitrate: string
       '-map', '0:v:0?', '-map', '1:a:0?',
       '-vf', `scale=-2:'max(ih,${height})':flags=lanczos,format=yuv420p`,
       '-c:v', encoderForBackend(backend),
+      '-realtime', 'true',
+      '-prio_speed', '1',
       '-force_key_frames', 'expr:gte(t,n_forced*2)',
       '-b:v', videoBitrate,
       '-maxrate', maxrate,
@@ -262,28 +264,27 @@ function profileArgs(profile: string, backend: Backend) {
     case 'enhanced_1080p':
       return hardwareFilteredH264Args(
         backend,
-        'yadif=mode=0:parity=auto:deint=interlaced,scale=-2:1080:flags=lanczos,unsharp=5:5:0.45:3:3:0.25',
+        'yadif=mode=0:parity=auto:deint=interlaced,scale=-2:\'max(ih,1080)\':flags=lanczos,unsharp=5:5:0.45:3:3:0.25',
         '6500k', '8000k', '13000k', '512k',
         30
       )
     case 'clean_1080p':
       return hardwareFilteredH264Args(
         backend,
-        'yadif=mode=0:parity=auto:deint=interlaced,hqdn3d=1.5:1.5:4:4,scale=-2:1080:flags=lanczos,unsharp=3:3:0.25:3:3:0.12',
+        'yadif=mode=0:parity=auto:deint=interlaced,hqdn3d=1.5:1.5:4:4,scale=-2:\'max(ih,1080)\':flags=lanczos,unsharp=3:3:0.25:3:3:0.12',
         '6000k', '7500k', '12000k', '512k',
         30
       )
     case 'sharp_1080p':
       return hardwareFilteredH264Args(
         backend,
-        'yadif=mode=0:parity=auto:deint=interlaced,scale=-2:1080:flags=lanczos,unsharp=7:7:0.65:5:5:0.35',
+        'yadif=mode=0:parity=auto:deint=interlaced,scale=-2:\'max(ih,1080)\':flags=lanczos,unsharp=7:7:0.65:5:5:0.35',
         '6500k', '8500k', '13000k', '512k',
         30
       )
     case 'smooth_720p60':
       return hardwareFilteredH264Args(
         backend,
-        // Using mi_mode=blend for performance on older hardware
         'scale=-2:720:flags=lanczos,minterpolate=fps=60:mi_mode=blend',
         '5000k', '6500k', '10000k', '384k',
         60
@@ -298,83 +299,8 @@ function profileArgs(profile: string, backend: Backend) {
     case 'sports_720p60':
       return hardwareFilteredH264Args(
         backend,
-        // Relying on yadif send_frame for 60fps; minterpolate removed for CPU efficiency
         'yadif=mode=send_frame:parity=auto:deint=interlaced,scale=-2:720:flags=lanczos,unsharp=5:5:0.35:3:3:0.2',
         '5500k', '7000k', '11000k', '384k',
-        60
-      )
-    case 'clean_1080p':
-      return hardwareFilteredH264Args(
-        backend,
-        'yadif=mode=0:parity=auto:deint=interlaced,hqdn3d=1.5:1.5:4:4,scale=-2:1080:flags=lanczos,unsharp=3:3:0.25:3:3:0.12',
-        '6000k', '7500k', '12000k', '512k',
-        30
-      )
-    case 'sharp_1080p':
-      return hardwareFilteredH264Args(
-        backend,
-        'yadif=mode=0:parity=auto:deint=interlaced,scale=-2:1080:flags=lanczos,unsharp=7:7:0.65:5:5:0.35',
-        '6500k', '8500k', '13000k', '512k',
-        30
-      )
-    case 'smooth_720p60':
-      return hardwareFilteredH264Args(
-        backend,
-        // Using mi_mode=blend for performance on older hardware
-        'scale=-2:720:flags=lanczos,minterpolate=fps=60:mi_mode=blend',
-        '5000k', '6500k', '10000k', '384k',
-        60
-      )
-    case 'smooth_1080p60':
-      return hardwareFilteredH264Args(
-        backend,
-        'scale=-2:1080:flags=lanczos,minterpolate=fps=60:mi_mode=blend',
-        '8500k', '10000k', '17000k', '512k',
-        60
-      )
-    case 'sports_720p60':
-      return hardwareFilteredH264Args(
-        backend,
-        // Relying on yadif send_frame for 60fps; minterpolate removed for CPU efficiency
-        'yadif=mode=send_frame:parity=auto:deint=interlaced,scale=-2:720:flags=lanczos,unsharp=5:5:0.35:3:3:0.2',
-        '5500k', '7000k', '11000k', '384k',
-        60
-      )
-    case 'clean_1080p':
-      return hardwareFilteredH264Args(
-        backend,
-        'yadif=mode=0:parity=auto:deint=interlaced,hqdn3d=1.5:1.5:4:4,scale=-2:1080:flags=lanczos,unsharp=3:3:0.25:3:3:0.12',
-        '6000k', '7500k', '12000k', '160k',
-        30
-      )
-    case 'sharp_1080p':
-      return hardwareFilteredH264Args(
-        backend,
-        'yadif=mode=0:parity=auto:deint=interlaced,scale=-2:1080:flags=lanczos,unsharp=7:7:0.65:5:5:0.35',
-        '6500k', '8500k', '13000k', '160k',
-        30
-      )
-    case 'smooth_720p60':
-      return hardwareFilteredH264Args(
-        backend,
-        // Using mi_mode=blend for performance on older hardware
-        'scale=-2:720:flags=lanczos,minterpolate=fps=60:mi_mode=blend',
-        '5000k', '6500k', '10000k', '160k',
-        60
-      )
-    case 'smooth_1080p60':
-      return hardwareFilteredH264Args(
-        backend,
-        'scale=-2:1080:flags=lanczos,minterpolate=fps=60:mi_mode=blend',
-        '8500k', '10000k', '17000k', '160k',
-        60
-      )
-    case 'sports_720p60':
-      return hardwareFilteredH264Args(
-        backend,
-        // Relying on yadif send_frame for 60fps; minterpolate removed for CPU efficiency
-        'yadif=mode=send_frame:parity=auto:deint=interlaced,scale=-2:720:flags=lanczos,unsharp=5:5:0.35:3:3:0.2',
-        '5500k', '7000k', '11000k', '160k',
         60
       )
     default:
@@ -386,8 +312,9 @@ function hlsArgs(outputDir: string) {
   return [
     '-f', 'hls',
     '-hls_time', '2',
+    '-hls_init_time', '1',
     '-hls_list_size', '10',
-    '-hls_flags', 'delete_segments+append_list+omit_endlist+program_date_time',
+    '-hls_flags', 'delete_segments+append_list+omit_endlist+program_date_time+independent_segments',
     '-hls_segment_filename', path.join(outputDir, 'segment_%06d.ts'),
     path.join(outputDir, 'index.m3u8'),
   ]
