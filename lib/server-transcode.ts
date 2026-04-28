@@ -275,18 +275,20 @@ function cpuH264Args(height: number, videoBitrate: string, maxrate: string, bufs
     '-maxrate', maxrate,
     '-bufsize', bufsize,
     '-c:a', 'aac',
+    '-ac', '6',
     '-b:a', audioBitrate,
     '-ar', '48000',
-    '-af', 'dynaudnorm=f=150:g=15:p=0.9',
+    '-af', 'dynaudnorm=f=150:g=15:p=0.9,surround=out_layout=5.1:level_in=1:level_out=1:lfe_low=120',
   ]
 }
 
 function hardwareH264Args(backend: Exclude<HardwareBackend, 'auto'>, height: number, videoBitrate: string, maxrate: string, bufsize: string, audioBitrate: string, scaleFlags = 'lanczos') {
   const audioArgs = [
     '-c:a', 'aac',
+    '-ac', '6',
     '-b:a', audioBitrate,
     '-ar', '48000',
-    '-af', 'dynaudnorm=f=150:g=15:p=0.9',
+    '-af', 'dynaudnorm=f=150:g=15:p=0.9,surround=out_layout=5.1:level_in=1:level_out=1:lfe_low=120',
   ]
 
   if (backend === 'cpu') return cpuH264Args(height, videoBitrate, maxrate, bufsize, audioBitrate)
@@ -350,9 +352,10 @@ function hardwareH264Args(backend: Exclude<HardwareBackend, 'auto'>, height: num
 function hardwareFilteredH264Args(backend: Exclude<HardwareBackend, 'auto'>, filter: string, videoBitrate: string, maxrate: string, bufsize: string, audioBitrate: string, fps = 60) {
   const audioArgs = [
     '-c:a', 'aac',
+    '-ac', '6',
     '-b:a', audioBitrate,
     '-ar', '48000',
-    '-af', 'dynaudnorm=f=150:g=15:p=0.9',
+    '-af', 'dynaudnorm=f=150:g=15:p=0.9,surround=out_layout=5.1:level_in=1:level_out=1:lfe_low=120',
   ]
 
   if (backend === 'cpu') {
@@ -439,39 +442,40 @@ function profileArgs(profile: PlaybackProfile, backend: Exclude<HardwareBackend,
         '-map', '0:v:0?', '-map', '0:a:0?',
         '-c:v', 'copy',
         '-c:a', 'aac',
-        '-b:a', '192k',
+        '-ac', '6',
+        '-b:a', '384k',
         '-ar', '48000',
-        '-af', 'dynaudnorm=f=150:g=15:p=0.9',
+        '-af', 'dynaudnorm=f=150:g=15:p=0.9,surround=out_layout=5.1:level_in=1:level_out=1:lfe_low=120',
       ]
     case 'transcode_720p':
-      return hardwareH264Args(backend, 720, '3500k', '4200k', '7000k', '192k')
+      return hardwareH264Args(backend, 720, '3500k', '4200k', '7000k', '384k')
     case 'transcode_1080p':
-      return hardwareH264Args(backend, 1080, '6000k', '7200k', '12000k', '256k')
+      return hardwareH264Args(backend, 1080, '6000k', '7200k', '12000k', '512k')
     case 'transcode_4k':
-      return hardwareH264Args(backend, 2160, '22000k', '28000k', '44000k', '320k')
+      return hardwareH264Args(backend, 2160, '22000k', '28000k', '44000k', '640k')
     case 'transcode_4k_fast':
       // Pixel doubling trick: using 'neighbor' scaling is extremely fast 
       // and maintains 1080p sharpness without blurring during the 4K upscale.
-      return hardwareH264Args(backend, 2160, '20000k', '26000k', '40000k', '320k', 'neighbor')
+      return hardwareH264Args(backend, 2160, '20000k', '26000k', '40000k', '640k', 'neighbor')
     case 'enhanced_1080p':
       return hardwareFilteredH264Args(
         backend,
         'yadif=mode=0:parity=auto:deint=interlaced,scale=-2:1080:flags=lanczos,unsharp=5:5:0.45:3:3:0.25',
-        '6500k', '8000k', '13000k', '256k',
+        '6500k', '8000k', '13000k', '512k',
         30 // default fps for non-smooth profiles
       )
     case 'clean_1080p':
       return hardwareFilteredH264Args(
         backend,
         'yadif=mode=0:parity=auto:deint=interlaced,hqdn3d=1.5:1.5:4:4,scale=-2:1080:flags=lanczos,unsharp=3:3:0.25:3:3:0.12',
-        '6000k', '7500k', '12000k', '256k',
+        '6000k', '7500k', '12000k', '512k',
         30
       )
     case 'sharp_1080p':
       return hardwareFilteredH264Args(
         backend,
         'yadif=mode=0:parity=auto:deint=interlaced,scale=-2:1080:flags=lanczos,unsharp=7:7:0.65:5:5:0.35',
-        '6500k', '8500k', '13000k', '256k',
+        '6500k', '8500k', '13000k', '512k',
         30
       )
     case 'smooth_720p60':
@@ -480,14 +484,14 @@ function profileArgs(profile: PlaybackProfile, backend: Exclude<HardwareBackend,
         // Note: mi_mode=blend is used instead of mci to support older CPUs. 
         // mci (motion compensation) is extremely heavy and prone to stuttering.
         'scale=-2:720:flags=lanczos,minterpolate=fps=60:mi_mode=blend',
-        '5000k', '6500k', '10000k', '192k',
+        '5000k', '6500k', '10000k', '384k',
         60
       )
     case 'smooth_1080p60':
       return hardwareFilteredH264Args(
         backend,
         'scale=-2:1080:flags=lanczos,minterpolate=fps=60:mi_mode=blend',
-        '8500k', '10000k', '17000k', '256k',
+        '8500k', '10000k', '17000k', '512k',
         60
       )
     case 'sports_720p60':
@@ -496,7 +500,7 @@ function profileArgs(profile: PlaybackProfile, backend: Exclude<HardwareBackend,
         // Note: minterpolate removed here; yadif send_frame naturally produces 60fps 
         // for 1080i sports feeds without the massive CPU overhead of optical flow.
         'yadif=mode=send_frame:parity=auto:deint=interlaced,scale=-2:720:flags=lanczos,unsharp=5:5:0.35:3:3:0.2',
-        '5500k', '7000k', '11000k', '192k',
+        '5500k', '7000k', '11000k', '384k',
         60
       )
     case 'sports_lite_720p60':
@@ -505,7 +509,7 @@ function profileArgs(profile: PlaybackProfile, backend: Exclude<HardwareBackend,
         // Absolute bare-minimum for 60fps: just deinterlace and scale. 
         // No sharpening or complex interpolation.
         'yadif=mode=send_frame:parity=auto:deint=interlaced,scale=-2:720:flags=lanczos',
-        '4500k', '5500k', '9000k', '192k',
+        '4500k', '5500k', '9000k', '384k',
         60
       )
     default:
