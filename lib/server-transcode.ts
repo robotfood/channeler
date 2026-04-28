@@ -433,21 +433,21 @@ function profileArgs(profile: PlaybackProfile, backend: Exclude<HardwareBackend,
     case 'enhanced_1080p':
       return hardwareFilteredH264Args(
         backend,
-        'yadif=mode=send_frame:parity=auto:deint=interlaced,scale=-2:1080:flags=lanczos,unsharp=5:5:0.45:3:3:0.25',
+        'yadif=mode=0:parity=auto:deint=interlaced,scale=-2:1080:flags=lanczos,unsharp=5:5:0.45:3:3:0.25',
         '6500k', '8000k', '13000k', '160k',
         30 // default fps for non-smooth profiles
       )
     case 'clean_1080p':
       return hardwareFilteredH264Args(
         backend,
-        'yadif=mode=send_frame:parity=auto:deint=interlaced,hqdn3d=1.5:1.5:4:4,scale=-2:1080:flags=lanczos,unsharp=3:3:0.25:3:3:0.12',
+        'yadif=mode=0:parity=auto:deint=interlaced,hqdn3d=1.5:1.5:4:4,scale=-2:1080:flags=lanczos,unsharp=3:3:0.25:3:3:0.12',
         '6000k', '7500k', '12000k', '160k',
         30
       )
     case 'sharp_1080p':
       return hardwareFilteredH264Args(
         backend,
-        'yadif=mode=send_frame:parity=auto:deint=interlaced,scale=-2:1080:flags=lanczos,unsharp=7:7:0.65:5:5:0.35',
+        'yadif=mode=0:parity=auto:deint=interlaced,scale=-2:1080:flags=lanczos,unsharp=7:7:0.65:5:5:0.35',
         '6500k', '8500k', '13000k', '160k',
         30
       )
