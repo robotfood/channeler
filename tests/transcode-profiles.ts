@@ -221,7 +221,14 @@ function hardwareFilteredH264Args(backend: Backend, filter: string, videoBitrate
 function profileArgs(profile: string, backend: Backend) {
   switch (profile) {
     case 'stable_hls':
-      return ['-map', '0:v:0?', '-map', '0:a:0?', '-c', 'copy']
+      return [
+        '-map', '0:v:0?', '-map', '0:a:0?',
+        '-c:v', 'copy',
+        '-c:a', 'aac',
+        '-b:a', '192k',
+        '-ar', '48000',
+        '-af', 'dynaudnorm=f=150:g=15:p=0.9',
+      ]
     case 'transcode_720p':
       return hardwareH264Args(backend, 720, '3500k', '4200k', '7000k', '128k')
     case 'transcode_1080p':
