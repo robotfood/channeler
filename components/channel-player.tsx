@@ -59,6 +59,7 @@ const PLAYBACK_PROFILE_LABELS: Record<string, string> = {
   smooth_720p60: 'Smooth 720p60',
   smooth_1080p60: 'Smooth 1080p60',
   sports_720p60: 'Sports 720p60',
+  sports_lite_720p60: 'Sports Lite 60 FPS',
 }
 
 function playbackModeLabel(playbackProfile: string | null | undefined, proxyStreams: boolean | undefined) {

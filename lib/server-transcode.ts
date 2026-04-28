@@ -207,8 +207,8 @@ function transcodeThreads() {
 function threadingArgs() {
   const threads = transcodeThreads()
   return [
-    '-filter_threads', String(threads || Math.max(1, Math.min(os.cpus().length || 1, 8))),
-    '-threads', String(threads),
+    '-filter_threads', String(threads || os.cpus().length || 1),
+    '-threads', String(threads || os.cpus().length || 1),
   ]
 }
 
@@ -474,6 +474,15 @@ function profileArgs(profile: PlaybackProfile, backend: Exclude<HardwareBackend,
         // for 1080i sports feeds without the massive CPU overhead of optical flow.
         'yadif=mode=send_frame:parity=auto:deint=interlaced,scale=-2:720:flags=lanczos,unsharp=5:5:0.35:3:3:0.2',
         '5500k', '7000k', '11000k', '160k',
+        60
+      )
+    case 'sports_lite_720p60':
+      return hardwareFilteredH264Args(
+        backend,
+        // Absolute bare-minimum for 60fps: just deinterlace and scale. 
+        // No sharpening or complex interpolation.
+        'yadif=mode=send_frame:parity=auto:deint=interlaced,scale=-2:720:flags=lanczos',
+        '4500k', '5500k', '9000k', '128k',
         60
       )
     default:

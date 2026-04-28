@@ -118,6 +118,14 @@ const PLAYBACK_PROFILES = [
     res: '720p',
     quality: 'Deinterlace, Scale, Sharpen',
   },
+  {
+    value: 'sports_lite_720p60',
+    label: 'Sports Lite 60 FPS',
+    detail: 'Absolute bare-minimum 60 FPS profile. Removes all enhancement filters to save CPU. Best for old hardware.',
+    fps: '60',
+    res: '720p',
+    quality: 'Deinterlace, Scale',
+  },
 ]
 
 type PlaybackProfileValue = typeof PLAYBACK_PROFILES[number]['value']
