@@ -50,7 +50,7 @@ function selectedProfiles() {
     'sports_720p60',
   ]
 
-  return hasArg('--all') ? [...base, 'transcode_4k', 'smooth_1080p60'] : base
+  return hasArg('--all') ? [...base, 'transcode_4k', 'transcode_4k_ultra', 'smooth_1080p60'] : base
 }
 
 function encoderForBackend(backend: Backend) {
@@ -176,7 +176,7 @@ function hardwareH264Args(backend: Backend, height: number, videoBitrate: string
   ]
 }
 
-function hardwareFilteredH264Args(backend: Backend, filter: string, videoBitrate: string, maxrate: string, bufsize: string, audioBitrate: string, fps = 60) {
+function hardwareFilteredH264Args(backend: Backend, filter: string, videoBitrate: string, maxrate: string, bufsize: string, audioBitrate: string, fps?: number) {
   const audioArgs = [
     '-c:a', 'aac',
     '-ac', '6',
@@ -185,6 +185,12 @@ function hardwareFilteredH264Args(backend: Backend, filter: string, videoBitrate
     '-af', 'dynaudnorm=f=150:g=15:p=0.9,surround=out_layout=5.1:level_in=1:level_out=1:lfe_low=120',
   ]
 
+  const fpsArgs = fps ? [
+    '-r', String(fps),
+    '-g', String(fps * 2),
+    '-keyint_min', String(fps * 2),
+  ] : []
+
   if (backend === 'cpu') {
     return [
       '-map', '0:v:0?', '-map', '1:a:0?',
@@ -192,9 +198,7 @@ function hardwareFilteredH264Args(backend: Backend, filter: string, videoBitrate
       '-c:v', 'libx264',
       '-preset', 'veryfast',
       '-tune', 'zerolatency',
-      '-r', String(fps),
-      '-g', String(fps * 2),
-      '-keyint_min', String(fps * 2),
+      ...fpsArgs,
       '-sc_threshold', '0',
       '-b:v', videoBitrate,
       '-maxrate', maxrate,
@@ -208,8 +212,7 @@ function hardwareFilteredH264Args(backend: Backend, filter: string, videoBitrate
       '-map', '0:v:0?', '-map', '1:a:0?',
       '-vf', `${filter},format=nv12,hwupload`,
       '-c:v', encoderForBackend(backend),
-      '-r', String(fps),
-      '-g', String(fps * 2),
+      ...fpsArgs,
       '-force_key_frames', 'expr:gte(t,n_forced*2)',
       '-qp', '23',
       ...audioArgs,
@@ -221,8 +224,7 @@ function hardwareFilteredH264Args(backend: Backend, filter: string, videoBitrate
     '-vf', `${filter},format=${backend === 'videotoolbox' ? 'yuv420p' : 'nv12'}`,
     '-c:v', encoderForBackend(backend),
     ...(backend === 'qsv' ? ['-preset', 'veryfast'] : backend === 'amf' ? ['-quality', 'speed'] : []),
-    '-r', String(fps),
-    '-g', String(fps * 2),
+    ...fpsArgs,
     '-force_key_frames', 'expr:gte(t,n_forced*2)',
     '-b:v', videoBitrate,
     '-maxrate', maxrate,
@@ -251,6 +253,12 @@ function profileArgs(profile: string, backend: Backend) {
       return hardwareH264Args(backend, 2160, '22000k', '28000k', '44000k', '640k')
     case 'transcode_4k_fast':
       return hardwareH264Args(backend, 2160, '20000k', '26000k', '40000k', '640k')
+    case 'transcode_4k_ultra':
+      return hardwareFilteredH264Args(
+        backend,
+        'scale=-2:2160:flags=lanczos,unsharp=3:3:0.5:3:3:0.5',
+        '25000k', '32000k', '50000k', '640k'
+      )
     case 'enhanced_1080p':
       return hardwareFilteredH264Args(
         backend,

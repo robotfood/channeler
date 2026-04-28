@@ -6,6 +6,7 @@ export const PLAYBACK_PROFILES = [
   'transcode_1080p',
   'transcode_4k',
   'transcode_4k_fast',
+  'transcode_4k_ultra',
   'enhanced_1080p',
   'clean_1080p',
   'sharp_1080p',

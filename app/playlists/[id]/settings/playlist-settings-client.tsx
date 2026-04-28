@@ -79,6 +79,14 @@ const PLAYBACK_PROFILES = [
     quality: 'Nearest Neighbor Scaling',
   },
   {
+    value: 'transcode_4k_ultra',
+    label: '4K (Ultra Sharpened)',
+    detail: 'Absolute highest quality 4K upscale. Uses Lanczos scaling plus a refinement sharpening pass.',
+    fps: 'Source',
+    res: '4K',
+    quality: 'Lanczos + Unsharp Mask',
+  },
+  {
     value: 'enhanced_1080p',
     label: 'Enhanced 1080p',
     detail: 'Deinterlaces, scales, and lightly sharpens to improve soft or interlaced feeds.',

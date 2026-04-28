@@ -350,7 +350,7 @@ function hardwareH264Args(backend: Exclude<HardwareBackend, 'auto'>, height: num
   ]
 }
 
-function hardwareFilteredH264Args(backend: Exclude<HardwareBackend, 'auto'>, filter: string, videoBitrate: string, maxrate: string, bufsize: string, audioBitrate: string, fps = 60) {
+function hardwareFilteredH264Args(backend: Exclude<HardwareBackend, 'auto'>, filter: string, videoBitrate: string, maxrate: string, bufsize: string, audioBitrate: string, fps?: number) {
   const audioArgs = [
     '-c:a', 'aac',
     '-ac', '6',
@@ -359,6 +359,12 @@ function hardwareFilteredH264Args(backend: Exclude<HardwareBackend, 'auto'>, fil
     '-af', 'dynaudnorm=f=150:g=15:p=0.9,surround=out_layout=5.1:level_in=1:level_out=1:lfe_low=120',
   ]
 
+  const fpsArgs = fps ? [
+    '-r', String(fps),
+    '-g', String(fps * 2),
+    '-keyint_min', String(fps * 2),
+  ] : []
+
   if (backend === 'cpu') {
     return [
       '-map', '0:v:0?', '-map', '0:a:0?',
@@ -366,9 +372,8 @@ function hardwareFilteredH264Args(backend: Exclude<HardwareBackend, 'auto'>, fil
       '-c:v', 'libx264',
       '-preset', 'veryfast',
       '-tune', 'zerolatency',
-      '-r', String(fps),
-      '-g', String(fps * 2),
-      '-keyint_min', String(fps * 2),
+      ...fpsArgs,
+      '-force_key_frames', 'expr:gte(t,n_forced*2)',
       '-sc_threshold', '0',
       '-b:v', videoBitrate,
       '-maxrate', maxrate,
@@ -382,8 +387,7 @@ function hardwareFilteredH264Args(backend: Exclude<HardwareBackend, 'auto'>, fil
       '-map', '0:v:0?', '-map', '0:a:0?',
       '-vf', `${filter},format=nv12,hwupload`,
       '-c:v', 'h264_vaapi',
-      '-r', String(fps),
-      '-g', String(fps * 2),
+      ...fpsArgs,
       '-force_key_frames', 'expr:gte(t,n_forced*2)',
       '-qp', '23',
       ...audioArgs,
@@ -395,8 +399,7 @@ function hardwareFilteredH264Args(backend: Exclude<HardwareBackend, 'auto'>, fil
       '-map', '0:v:0?', '-map', '0:a:0?',
       '-vf', `${filter},format=yuv420p`,
       '-c:v', 'h264_videotoolbox',
-      '-r', String(fps),
-      '-g', String(fps * 2),
+      ...fpsArgs,
       '-force_key_frames', 'expr:gte(t,n_forced*2)',
       '-b:v', videoBitrate,
       '-maxrate', maxrate,
@@ -411,8 +414,7 @@ function hardwareFilteredH264Args(backend: Exclude<HardwareBackend, 'auto'>, fil
       '-vf', `${filter},format=nv12`,
       '-c:v', 'h264_amf',
       '-quality', 'speed',
-      '-r', String(fps),
-      '-g', String(fps * 2),
+      ...fpsArgs,
       '-force_key_frames', 'expr:gte(t,n_forced*2)',
       '-b:v', videoBitrate,
       '-maxrate', maxrate,
@@ -426,8 +428,7 @@ function hardwareFilteredH264Args(backend: Exclude<HardwareBackend, 'auto'>, fil
     '-vf', `${filter},format=nv12`,
     '-c:v', 'h264_qsv',
     '-preset', 'veryfast',
-    '-r', String(fps),
-    '-g', String(fps * 2),
+    ...fpsArgs,
     '-force_key_frames', 'expr:gte(t,n_forced*2)',
     '-b:v', videoBitrate,
     '-maxrate', maxrate,
@@ -458,6 +459,14 @@ function profileArgs(profile: PlaybackProfile, backend: Exclude<HardwareBackend,
       // Pixel doubling trick: using 'neighbor' scaling is extremely fast 
       // and maintains 1080p sharpness without blurring during the 4K upscale.
       return hardwareH264Args(backend, 2160, '20000k', '26000k', '40000k', '640k', 'neighbor')
+    case 'transcode_4k_ultra':
+      // Ultra quality 4K upscale: Lanczos scaling followed by a specialized sharpening pass.
+      // High CPU cost for filtering, but uses hardware for encoding.
+      return hardwareFilteredH264Args(
+        backend,
+        'scale=-2:2160:flags=lanczos,unsharp=3:3:0.5:3:3:0.5',
+        '25000k', '32000k', '50000k', '640k'
+      )
     case 'enhanced_1080p':
       return hardwareFilteredH264Args(
         backend,
