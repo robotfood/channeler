@@ -97,26 +97,26 @@ const PLAYBACK_PROFILES = [
   {
     value: 'smooth_720p60',
     label: 'Smooth 720p60',
-    detail: 'Interpolates motion to 60 FPS at 720p. CPU intensive, useful for sports and news.',
+    detail: 'Lightweight motion blending for a 60 FPS feel at 720p. Much easier on the CPU than complex interpolation.',
     fps: '60',
     res: '720p',
-    quality: 'Scale, Motion Interpolation',
+    quality: 'Scale, Blend Interpolation',
   },
   {
     value: 'smooth_1080p60',
     label: 'Smooth 1080p60',
-    detail: 'Interpolates motion to 60 FPS at 1080p. Very CPU intensive.',
+    detail: 'Lightweight motion blending for a 60 FPS feel at 1080p.',
     fps: '60',
     res: '1080p',
-    quality: 'Scale, Motion Interpolation',
+    quality: 'Scale, Blend Interpolation',
   },
   {
     value: 'sports_720p60',
     label: 'Sports 720p60',
-    detail: 'Combines deinterlace, sharpening, and 60 FPS interpolation tuned for sports feeds.',
+    detail: 'Deinterlaces and sharpens tuned for sports. Uses efficient deinterlacing to reach 60 FPS on older CPUs.',
     fps: '60',
     res: '720p',
-    quality: 'Deinterlace, Scale, Sharpen, Motion Interpolation',
+    quality: 'Deinterlace, Scale, Sharpen',
   },
 ]
 
