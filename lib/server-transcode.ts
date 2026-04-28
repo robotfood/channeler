@@ -280,7 +280,7 @@ function cpuH264Args(height: number, videoBitrate: string, maxrate: string, bufs
     '-ac', '6',
     '-b:a', audioBitrate,
     '-ar', '48000',
-    '-af', 'dynaudnorm=f=150:g=15:p=0.9,surround=chl_out=5.1:level_in=1:level_out=1:lfe_low=120',
+    '-af', 'dynaudnorm=f=150:g=15:p=0.9,surround=chl_out=5.1',
   ]
 }
 
@@ -290,7 +290,7 @@ function hardwareH264Args(backend: Exclude<HardwareBackend, 'auto'>, height: num
     '-ac', '6',
     '-b:a', audioBitrate,
     '-ar', '48000',
-    '-af', 'dynaudnorm=f=150:g=15:p=0.9,surround=chl_out=5.1:level_in=1:level_out=1:lfe_low=120',
+    '-af', 'dynaudnorm=f=150:g=15:p=0.9,surround=chl_out=5.1',
   ]
 
   if (backend === 'cpu') return cpuH264Args(height, videoBitrate, maxrate, bufsize, audioBitrate)
@@ -359,7 +359,7 @@ function hardwareFilteredH264Args(backend: Exclude<HardwareBackend, 'auto'>, fil
     '-ac', '6',
     '-b:a', audioBitrate,
     '-ar', '48000',
-    '-af', 'dynaudnorm=f=150:g=15:p=0.9,surround=chl_out=5.1:level_in=1:level_out=1:lfe_low=120',
+    '-af', 'dynaudnorm=f=150:g=15:p=0.9,surround=chl_out=5.1',
   ]
 
   const fpsArgs = fps ? [
@@ -373,7 +373,7 @@ function hardwareFilteredH264Args(backend: Exclude<HardwareBackend, 'auto'>, fil
       '-map', '0:v:0?', '-map', '0:a:0?',
       '-vf', `${filter},format=yuv420p`,
       '-c:v', 'libx264',
-      '-preset', 'ultrafast', // Use ultrafast for CPU filtered 60fps
+      '-preset', 'ultrafast',
       '-tune', 'zerolatency',
       ...fpsArgs,
       '-force_key_frames', 'expr:gte(t,n_forced*2)',
@@ -388,7 +388,6 @@ function hardwareFilteredH264Args(backend: Exclude<HardwareBackend, 'auto'>, fil
   if (backend === 'vaapi') {
     return [
       '-map', '0:v:0?', '-map', '0:a:0?',
-      // Ensure filter chain ends with hwupload for vaapi
       '-vf', filter.includes('hwupload') ? filter : `${filter},format=nv12,hwupload`,
       '-c:v', 'h264_vaapi',
       ...fpsArgs,
@@ -402,8 +401,9 @@ function hardwareFilteredH264Args(backend: Exclude<HardwareBackend, 'auto'>, fil
     return [
       '-map', '0:v:0?', '-map', '0:a:0?',
       // Use yadif_videotoolbox for Metal-accelerated deinterlacing if requested in filter
+      // Use mode=send_field (1) for 60fps
       '-vf', filter.includes('yadif') 
-        ? filter.replace(/yadif=[^,]+/, 'yadif_videotoolbox').replace(/scale=[^,]+/, 'scale_vt')
+        ? filter.replace(/yadif=[^,]+/, 'yadif_videotoolbox=mode=send_field').replace(/scale=[^,]+/, 'scale_vt')
         : filter.replace(/scale=[^,]+/, 'scale_vt'),
       '-c:v', 'h264_videotoolbox',
       ...fpsArgs,
@@ -454,7 +454,7 @@ function profileArgs(profile: PlaybackProfile, backend: Exclude<HardwareBackend,
         '-ac', '6',
         '-b:a', '384k',
         '-ar', '48000',
-        '-af', 'dynaudnorm=f=150:g=15:p=0.9,surround=chl_out=5.1:level_in=1:level_out=1:lfe_low=120',
+        '-af', 'dynaudnorm=f=150:g=15:p=0.9,surround=chl_out=5.1',
       ]
     case 'transcode_720p':
       return hardwareH264Args(backend, 720, '3500k', '4200k', '7000k', '384k')
@@ -463,12 +463,8 @@ function profileArgs(profile: PlaybackProfile, backend: Exclude<HardwareBackend,
     case 'transcode_4k':
       return hardwareH264Args(backend, 2160, '22000k', '28000k', '44000k', '640k')
     case 'transcode_4k_fast':
-      // Pixel doubling trick: using 'neighbor' scaling is extremely fast 
-      // and maintains 1080p sharpness without blurring during the 4K upscale.
       return hardwareH264Args(backend, 2160, '20000k', '26000k', '40000k', '640k', 'neighbor')
     case 'transcode_4k_ultra':
-      // Ultra quality 4K upscale: Lanczos scaling followed by a specialized sharpening pass.
-      // High CPU cost for filtering, but uses hardware for encoding.
       return hardwareFilteredH264Args(
         backend,
         'scale=-2:2160:flags=lanczos,unsharp=3:3:0.5:3:3:0.5',
@@ -479,7 +475,7 @@ function profileArgs(profile: PlaybackProfile, backend: Exclude<HardwareBackend,
         backend,
         'yadif=mode=0:parity=auto:deint=interlaced,scale=-2:\'max(ih\\,1080)\':flags=lanczos,unsharp=5:5:0.45:3:3:0.25',
         '6500k', '8000k', '13000k', '512k',
-        30 // default fps for non-smooth profiles
+        30
       )
     case 'clean_1080p':
       return hardwareFilteredH264Args(
@@ -502,7 +498,7 @@ function profileArgs(profile: PlaybackProfile, backend: Exclude<HardwareBackend,
       if (backend === 'qsv') {
         return hardwareFilteredH264Args(backend, 'format=nv12,vpp_qsv=deinterlace=2:w=-2:h=720', '5000k', '6000k', '10000k', '384k', 60)
       }
-      return hardwareFilteredH264Args(backend, 'yadif=mode=send_frame:parity=auto:deint=interlaced,scale=-2:720:flags=lanczos', '4500k', '5500k', '9000k', '384k', 60)
+      return hardwareFilteredH264Args(backend, 'yadif=mode=send_field:parity=auto:deint=interlaced,scale=-2:\'max(ih\\,720)\':flags=lanczos', '4500k', '5500k', '9000k', '384k', 60)
 
     case 'smooth_1080p60':
       if (backend === 'vaapi') {
@@ -511,28 +507,25 @@ function profileArgs(profile: PlaybackProfile, backend: Exclude<HardwareBackend,
       if (backend === 'qsv') {
         return hardwareFilteredH264Args(backend, 'format=nv12,vpp_qsv=deinterlace=2:w=-2:h=1080', '8500k', '10000k', '17000k', '512k', 60)
       }
-      return hardwareFilteredH264Args(backend, 'yadif=mode=send_frame:parity=auto:deint=interlaced,scale=-2:1080:flags=lanczos', '7500k', '9000k', '15000k', '512k', 60)
+      return hardwareFilteredH264Args(backend, 'yadif=mode=send_field:parity=auto:deint=interlaced,scale=-2:\'max(ih\\,1080)\':flags=lanczos', '7500k', '9000k', '15000k', '512k', 60)
 
     case 'sports_720p60':
       if (backend === 'vaapi') {
-        // Hardware deinterlace, scale, and subtle detail enhancement
         return hardwareFilteredH264Args(backend, 'hwupload,deinterlace_vaapi,scale_vaapi=w=-2:h=720:format=nv12', '5500k', '7000k', '11000k', '384k', 60)
       }
       if (backend === 'qsv') {
-        // QSV hardware pipeline with detail enhancement and denoise
         return hardwareFilteredH264Args(backend, 'format=nv12,vpp_qsv=deinterlace=2:w=-2:h=720:detail=50:denoise=20', '5500k', '7000k', '11000k', '384k', 60)
       }
-      return hardwareFilteredH264Args(backend, 'yadif=mode=send_frame:parity=auto:deint=interlaced,scale=-2:720:flags=lanczos', '5500k', '7000k', '11000k', '384k', 60)
+      return hardwareFilteredH264Args(backend, 'yadif=mode=send_field:parity=auto:deint=interlaced,scale=-2:\'max(ih\\,720)\':flags=lanczos,unsharp=5:5:0.35:3:3:0.2', '5500k', '7000k', '11000k', '384k', 60)
 
     case 'sports_lite_720p60':
-      // This is now redundant but kept for compatibility, using the fastest path
       if (backend === 'vaapi') {
         return hardwareFilteredH264Args(backend, 'hwupload,deinterlace_vaapi,scale_vaapi=w=-2:h=720:format=nv12', '4500k', '5500k', '9000k', '384k', 60)
       }
       if (backend === 'qsv') {
         return hardwareFilteredH264Args(backend, 'format=nv12,vpp_qsv=deinterlace=2:w=-2:h=720', '4500k', '5500k', '9000k', '384k', 60)
       }
-      return hardwareFilteredH264Args(backend, 'yadif=mode=send_frame:parity=auto:deint=interlaced,scale=-2:720:flags=lanczos', '4500k', '5500k', '9000k', '384k', 60)
+      return hardwareFilteredH264Args(backend, 'yadif=mode=send_field:parity=auto:deint=interlaced,scale=-2:\'max(ih\\,720)\':flags=lanczos', '4500k', '5500k', '9000k', '384k', 60)
     default:
       return ['-map', '0:v:0?', '-map', '0:a:0?', '-c', 'copy']
   }
@@ -544,7 +537,6 @@ function ffmpegArgs(sourceUrl: string, outputDir: string, profile: PlaybackProfi
     '-loglevel', 'warning',
     '-nostdin',
     '-fflags', '+genpts',
-    ...(backend === 'videotoolbox' ? ['-hwaccel', 'videotoolbox'] : []),
     ...(backend === 'vaapi' ? vaapiDeviceArgs() : []),
     ...(backend === 'qsv' ? qsvDeviceArgs() : []),
     ...threadingArgs(),

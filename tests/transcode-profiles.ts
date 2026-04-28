@@ -124,7 +124,7 @@ function cpuH264Args(height: number, videoBitrate: string, maxrate: string, bufs
     '-ac', '6',
     '-b:a', audioBitrate,
     '-ar', '48000',
-    '-af', 'dynaudnorm=f=150:g=15:p=0.9,surround=chl_out=5.1:level_in=1:level_out=1:lfe_low=120',
+    '-af', 'dynaudnorm=f=150:g=15:p=0.9,surround=chl_out=5.1',
   ]
 }
 
@@ -134,7 +134,7 @@ function hardwareH264Args(backend: Backend, height: number, videoBitrate: string
     '-ac', '6',
     '-b:a', audioBitrate,
     '-ar', '48000',
-    '-af', 'dynaudnorm=f=150:g=15:p=0.9,surround=chl_out=5.1:level_in=1:level_out=1:lfe_low=120',
+    '-af', 'dynaudnorm=f=150:g=15:p=0.9,surround=chl_out=5.1',
   ]
 
   if (backend === 'cpu') return cpuH264Args(height, videoBitrate, maxrate, bufsize, audioBitrate)
@@ -153,10 +153,9 @@ function hardwareH264Args(backend: Backend, height: number, videoBitrate: string
   if (backend === 'videotoolbox') {
     return [
       '-map', '0:v:0?', '-map', '1:a:0?',
-      '-vf', `scale=-2:'max(ih\\,${height})':flags=lanczos,format=yuv420p`,
+      '-vf', `scale_vt=w=-2:h=${height}:color_matrix=bt709`,
       '-c:v', encoderForBackend(backend),
       '-realtime', 'true',
-      '-prio_speed', '1',
       '-force_key_frames', 'expr:gte(t,n_forced*2)',
       '-b:v', videoBitrate,
       '-maxrate', maxrate,
@@ -184,7 +183,7 @@ function hardwareFilteredH264Args(backend: Backend, filter: string, videoBitrate
     '-ac', '6',
     '-b:a', audioBitrate,
     '-ar', '48000',
-    '-af', 'dynaudnorm=f=150:g=15:p=0.9,surround=chl_out=5.1:level_in=1:level_out=1:lfe_low=120',
+    '-af', 'dynaudnorm=f=150:g=15:p=0.9,surround=chl_out=5.1',
   ]
 
   const fpsArgs = fps ? [
@@ -212,7 +211,7 @@ function hardwareFilteredH264Args(backend: Backend, filter: string, videoBitrate
   if (backend === 'vaapi') {
     return [
       '-map', '0:v:0?', '-map', '1:a:0?',
-      '-vf', `${filter},format=nv12,hwupload`,
+      '-vf', filter.includes('hwupload') ? filter : `${filter},format=nv12,hwupload`,
       '-c:v', encoderForBackend(backend),
       ...fpsArgs,
       '-force_key_frames', 'expr:gte(t,n_forced*2)',
@@ -221,9 +220,25 @@ function hardwareFilteredH264Args(backend: Backend, filter: string, videoBitrate
     ]
   }
 
+  if (backend === 'videotoolbox') {
+    return [
+      '-map', '0:v:0?', '-map', '1:a:0?',
+      '-vf', filter.includes('yadif') 
+        ? filter.replace(/yadif=[^,]+/, 'yadif_videotoolbox=mode=send_field').replace(/scale=[^,]+/, 'scale_vt')
+        : filter.replace(/scale=[^,]+/, 'scale_vt'),
+      '-c:v', encoderForBackend(backend),
+      ...fpsArgs,
+      '-force_key_frames', 'expr:gte(t,n_forced*2)',
+      '-b:v', videoBitrate,
+      '-maxrate', maxrate,
+      '-bufsize', bufsize,
+      ...audioArgs,
+    ]
+  }
+
   return [
     '-map', '0:v:0?', '-map', '1:a:0?',
-    '-vf', `${filter},format=${backend === 'videotoolbox' ? 'yuv420p' : 'nv12'}`,
+    '-vf', filter.includes('format=nv12') ? filter : `${filter},format=nv12`,
     '-c:v', encoderForBackend(backend),
     ...(backend === 'qsv' ? ['-preset', 'veryfast'] : backend === 'amf' ? ['-quality', 'speed'] : []),
     ...fpsArgs,
@@ -245,7 +260,7 @@ function profileArgs(profile: string, backend: Backend) {
         '-ac', '6',
         '-b:a', '384k',
         '-ar', '48000',
-        '-af', 'dynaudnorm=f=150:g=15:p=0.9,surround=chl_out=5.1:level_in=1:level_out=1:lfe_low=120',
+        '-af', 'dynaudnorm=f=150:g=15:p=0.9,surround=chl_out=5.1',
       ]
     case 'transcode_720p':
       return hardwareH264Args(backend, 720, '3500k', '4200k', '7000k', '384k')
@@ -283,26 +298,31 @@ function profileArgs(profile: string, backend: Backend) {
         30
       )
     case 'smooth_720p60':
-      return hardwareFilteredH264Args(
-        backend,
-        'scale=-2:720:flags=lanczos,minterpolate=fps=60:mi_mode=blend',
-        '5000k', '6500k', '10000k', '384k',
-        60
-      )
+      if (backend === 'vaapi') {
+        return hardwareFilteredH264Args(backend, 'hwupload,deinterlace_vaapi,scale_vaapi=w=-2:h=720:format=nv12', '5000k', '6000k', '10000k', '384k', 60)
+      }
+      if (backend === 'qsv') {
+        return hardwareFilteredH264Args(backend, 'format=nv12,vpp_qsv=deinterlace=2:w=-2:h=720', '5000k', '6000k', '10000k', '384k', 60)
+      }
+      return hardwareFilteredH264Args(backend, 'yadif=mode=send_field:parity=auto:deint=interlaced,scale=-2:\'max(ih\\,720)\':flags=lanczos', '4500k', '5500k', '9000k', '384k', 60)
+
     case 'smooth_1080p60':
-      return hardwareFilteredH264Args(
-        backend,
-        'scale=-2:1080:flags=lanczos,minterpolate=fps=60:mi_mode=blend',
-        '8500k', '10000k', '17000k', '512k',
-        60
-      )
+      if (backend === 'vaapi') {
+        return hardwareFilteredH264Args(backend, 'hwupload,deinterlace_vaapi,scale_vaapi=w=-2:h=1080:format=nv12', '8500k', '10000k', '17000k', '512k', 60)
+      }
+      if (backend === 'qsv') {
+        return hardwareFilteredH264Args(backend, 'format=nv12,vpp_qsv=deinterlace=2:w=-2:h=1080', '8500k', '10000k', '17000k', '512k', 60)
+      }
+      return hardwareFilteredH264Args(backend, 'yadif=mode=send_field:parity=auto:deint=interlaced,scale=-2:\'max(ih\\,1080)\':flags=lanczos', '7500k', '9000k', '15000k', '512k', 60)
+
     case 'sports_720p60':
-      return hardwareFilteredH264Args(
-        backend,
-        'yadif=mode=send_frame:parity=auto:deint=interlaced,scale=-2:720:flags=lanczos,unsharp=5:5:0.35:3:3:0.2',
-        '5500k', '7000k', '11000k', '384k',
-        60
-      )
+      if (backend === 'vaapi') {
+        return hardwareFilteredH264Args(backend, 'hwupload,deinterlace_vaapi,scale_vaapi=w=-2:h=720:format=nv12', '5500k', '7000k', '11000k', '384k', 60)
+      }
+      if (backend === 'qsv') {
+        return hardwareFilteredH264Args(backend, 'format=nv12,vpp_qsv=deinterlace=2:w=-2:h=720:detail=50:denoise=20', '5500k', '7000k', '11000k', '384k', 60)
+      }
+      return hardwareFilteredH264Args(backend, 'yadif=mode=send_field:parity=auto:deint=interlaced,scale=-2:\'max(ih\\,720)\':flags=lanczos,unsharp=5:5:0.35:3:3:0.2', '5500k', '7000k', '11000k', '384k', 60)
     default:
       throw new Error(`Unknown profile: ${profile}`)
   }
@@ -312,9 +332,8 @@ function hlsArgs(outputDir: string) {
   return [
     '-f', 'hls',
     '-hls_time', '2',
-    '-hls_init_time', '1',
     '-hls_list_size', '10',
-    '-hls_flags', 'delete_segments+append_list+omit_endlist+program_date_time+independent_segments',
+    '-hls_flags', 'delete_segments+append_list+omit_endlist+program_date_time',
     '-hls_segment_filename', path.join(outputDir, 'segment_%06d.ts'),
     path.join(outputDir, 'index.m3u8'),
   ]
