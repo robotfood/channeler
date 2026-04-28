@@ -251,10 +251,10 @@ function inputArgs(sourceUrl: string) {
   ]
 }
 
-function hlsArgs(outputDir: string) {
+function hlsArgs(outputDir: string, segmentTime = 2) {
   return [
     '-f', 'hls',
-    '-hls_time', '2',
+    '-hls_time', String(segmentTime),
     '-hls_list_size', '10',
     '-hls_flags', 'delete_segments+append_list+omit_endlist+program_date_time',
     '-hls_segment_filename', path.join(outputDir, 'segment_%06d.ts'),
@@ -270,7 +270,7 @@ function cpuH264Args(height: number, videoBitrate: string, maxrate: string, bufs
     '-c:v', 'libx264',
     '-preset', 'veryfast',
     '-tune', 'zerolatency',
-    '-force_key_frames', 'expr:gte(t,n_forced*2)',
+    '-force_key_frames', `expr:gte(t,n_forced*${height >= 2160 ? 4 : 2})`,
     '-sc_threshold', '0',
     '-b:v', videoBitrate,
     '-maxrate', maxrate,
@@ -279,7 +279,7 @@ function cpuH264Args(height: number, videoBitrate: string, maxrate: string, bufs
     '-ac', '6',
     '-b:a', audioBitrate,
     '-ar', '48000',
-    '-af', 'dynaudnorm=f=150:g=15:p=0.9,surround=chl_out=5.1:level_in=1:level_out=1:lfe_low=120',
+    '-af', `dynaudnorm=f=${height >= 2160 ? 500 : 150}:g=15:p=0.9,surround=chl_out=5.1:level_in=1:level_out=1:lfe_low=120`,
   ]
 }
 
@@ -289,7 +289,7 @@ function hardwareH264Args(backend: Exclude<HardwareBackend, 'auto'>, height: num
     '-ac', '6',
     '-b:a', audioBitrate,
     '-ar', '48000',
-    '-af', 'dynaudnorm=f=150:g=15:p=0.9,surround=chl_out=5.1:level_in=1:level_out=1:lfe_low=120',
+    '-af', `dynaudnorm=f=${height >= 2160 ? 500 : 150}:g=15:p=0.9,surround=chl_out=5.1:level_in=1:level_out=1:lfe_low=120`,
   ]
 
   if (backend === 'cpu') return cpuH264Args(height, videoBitrate, maxrate, bufsize, audioBitrate)
@@ -302,7 +302,7 @@ function hardwareH264Args(backend: Exclude<HardwareBackend, 'auto'>, height: num
         ? `hwupload,scale_vaapi=w=-2:h=${height}:format=nv12` 
         : `scale=-2:'max(ih,${height})':flags=${scaleFlags},format=nv12,hwupload`,
       '-c:v', 'h264_vaapi',
-      '-force_key_frames', 'expr:gte(t,n_forced*2)',
+      '-force_key_frames', `expr:gte(t,n_forced*${height >= 2160 ? 4 : 2})`,
       '-qp', height >= 2160 ? '18' : height >= 1080 ? '21' : '23',
       ...audioArgs,
     ]
@@ -313,7 +313,8 @@ function hardwareH264Args(backend: Exclude<HardwareBackend, 'auto'>, height: num
       '-map', '0:v:0?', '-map', '0:a:0?',
       '-vf', `scale=-2:'max(ih,${height})':flags=${scaleFlags},format=yuv420p`,
       '-c:v', 'h264_videotoolbox',
-      '-force_key_frames', 'expr:gte(t,n_forced*2)',
+      '-realtime', 'true',
+      '-force_key_frames', `expr:gte(t,n_forced*${height >= 2160 ? 4 : 2})`,
       '-b:v', videoBitrate,
       '-maxrate', maxrate,
       '-bufsize', bufsize,
@@ -327,7 +328,7 @@ function hardwareH264Args(backend: Exclude<HardwareBackend, 'auto'>, height: num
       '-vf', `scale=-2:'max(ih,${height})':flags=${scaleFlags},format=nv12`,
       '-c:v', 'h264_amf',
       '-quality', 'speed',
-      '-force_key_frames', 'expr:gte(t,n_forced*2)',
+      '-force_key_frames', `expr:gte(t,n_forced*${height >= 2160 ? 4 : 2})`,
       '-b:v', videoBitrate,
       '-maxrate', maxrate,
       '-bufsize', bufsize,
@@ -342,7 +343,7 @@ function hardwareH264Args(backend: Exclude<HardwareBackend, 'auto'>, height: num
       : `scale=-2:'max(ih,${height})':flags=${scaleFlags},format=nv12`,
     '-c:v', 'h264_qsv',
     '-preset', 'veryfast',
-    '-force_key_frames', 'expr:gte(t,n_forced*2)',
+    '-force_key_frames', `expr:gte(t,n_forced*${height >= 2160 ? 4 : 2})`,
     '-b:v', videoBitrate,
     '-maxrate', maxrate,
     '-bufsize', bufsize,
@@ -533,6 +534,7 @@ function profileArgs(profile: PlaybackProfile, backend: Exclude<HardwareBackend,
 }
 
 function ffmpegArgs(sourceUrl: string, outputDir: string, profile: PlaybackProfile, backend: Exclude<HardwareBackend, 'auto'>) {
+  const is4K = profile.includes('4k')
   return [
     '-hide_banner',
     '-loglevel', 'warning',
@@ -543,7 +545,7 @@ function ffmpegArgs(sourceUrl: string, outputDir: string, profile: PlaybackProfi
     ...threadingArgs(),
     ...inputArgs(sourceUrl),
     ...profileArgs(profile, backend),
-    ...hlsArgs(outputDir),
+    ...hlsArgs(outputDir, is4K ? 4 : 2),
   ]
 }
 
