@@ -111,6 +111,7 @@ type PlaybackProfileValue = typeof PLAYBACK_PROFILES[number]['value']
 
 const TRANSCODE_BACKENDS = [
   { name: 'auto', detail: 'Runs short FFmpeg test encodes and uses the first working hardware backend, then CPU if none pass.' },
+  { name: 'vaapi', detail: 'Uses Linux VAAPI through FFmpeg h264_vaapi. Best first choice for Intel iGPU Docker/Unraid hosts.' },
   { name: 'qsv', detail: 'Uses Intel Quick Sync through FFmpeg h264_qsv. Best for Intel iGPU servers with /dev/dri access.' },
   { name: 'amf', detail: 'Uses AMD hardware encoding through FFmpeg h264_amf when the host exposes a supported AMD GPU.' },
   { name: 'videotoolbox', detail: 'Uses Apple hardware encoding through FFmpeg h264_videotoolbox on macOS.' },
@@ -327,6 +328,7 @@ export default function PlaylistSettingsClient({ initialData, playlistId }: {
                 <select id="transcodeBackend" value={transcodeBackend} onChange={e => setTranscodeBackend(e.target.value)}
                   className="w-full max-w-[260px] bg-gray-50 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded px-2 py-1 text-sm focus:outline-none focus:border-blue-500">
                   <option value="auto">Auto detect</option>
+                  <option value="vaapi">Linux VAAPI</option>
                   <option value="qsv">Intel QSV</option>
                   <option value="amf">AMD AMF</option>
                   <option value="videotoolbox">Apple VideoToolbox</option>

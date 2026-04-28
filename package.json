@@ -6,7 +6,9 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
+    "check:qsv": "sh scripts/qsv-container-check.sh",
     "lint": "eslint",
+    "test:transcode": "node --import tsx tests/transcode-profiles.ts",
     "test:xtream": "node --import tsx tests/xtream-integration.ts"
   },
   "dependencies": {

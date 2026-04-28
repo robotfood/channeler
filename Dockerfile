@@ -34,7 +34,11 @@ WORKDIR /app
 COPY --from=builder /app/.next/standalone ./
 COPY --from=builder /app/.next/static ./.next/static
 COPY --from=builder /app/public ./public
+COPY --from=builder /app/scripts/qsv-container-check.sh /usr/local/bin/channeler-qsv-check
+COPY --from=builder /app/scripts/docker-entrypoint.sh /usr/local/bin/channeler-entrypoint
+RUN chmod +x /usr/local/bin/channeler-qsv-check /usr/local/bin/channeler-entrypoint
 
 EXPOSE 3000
 VOLUME ["/app/data"]
+ENTRYPOINT ["channeler-entrypoint"]
 CMD ["node", "server.js"]

@@ -27,8 +27,9 @@ const IDLE_TIMEOUT_MS = 90_000
 const STARTUP_TIMEOUT_MS = 20_000
 const HEAVY_STARTUP_TIMEOUT_MS = 45_000
 const sessions = new Map<string, Session>()
-const HARDWARE_BACKENDS = ['auto', 'qsv', 'amf', 'videotoolbox', 'cpu'] as const
-const HARDWARE_PROBE_ORDER: Array<Exclude<HardwareBackend, 'auto' | 'cpu'>> = ['videotoolbox', 'qsv', 'amf']
+const HARDWARE_BACKENDS = ['auto', 'vaapi', 'qsv', 'amf', 'videotoolbox', 'cpu'] as const
+const HARDWARE_PROBE_ORDER: Array<Exclude<HardwareBackend, 'auto' | 'cpu'>> =
+  process.platform === 'darwin' ? ['videotoolbox', 'qsv', 'amf', 'vaapi'] : ['vaapi', 'qsv', 'amf', 'videotoolbox']
 
 type HardwareBackend = typeof HARDWARE_BACKENDS[number]
 let detectedHardwareBackend: Exclude<HardwareBackend, 'auto'> | null = null
@@ -52,6 +53,8 @@ function resolvedHardwareBackend(value?: string | null) {
 
 function encoderForBackend(backend: Exclude<HardwareBackend, 'auto' | 'cpu'>) {
   switch (backend) {
+    case 'vaapi':
+      return 'h264_vaapi'
     case 'videotoolbox':
       return 'h264_videotoolbox'
     case 'qsv':
@@ -65,6 +68,39 @@ function probeFormatForBackend(backend: Exclude<HardwareBackend, 'auto' | 'cpu'>
   return backend === 'videotoolbox' ? 'format=yuv420p' : 'format=nv12'
 }
 
+function linuxRenderDevicePath() {
+  const configured = process.env.TRANSCODE_RENDER_DEVICE?.trim() || process.env.TRANSCODE_QSV_DEVICE?.trim()
+  if (configured) return configured
+
+  const defaultDevice = '/dev/dri/renderD128'
+  return fs.existsSync(defaultDevice) ? defaultDevice : null
+}
+
+function qsvDeviceArgs() {
+  const device = linuxRenderDevicePath()
+  if (!device) return []
+
+  if (process.platform === 'linux') {
+    return [
+      '-init_hw_device', `vaapi=va:${device}`,
+      '-init_hw_device', 'qsv=qsv@va',
+      '-filter_hw_device', 'qsv',
+    ]
+  }
+
+  return ['-init_hw_device', `qsv=qsv:${device}`, '-filter_hw_device', 'qsv']
+}
+
+function qsvInitMode() {
+  if (!linuxRenderDevicePath()) return 'implicit'
+  return process.platform === 'linux' ? 'vaapi-derived' : 'direct'
+}
+
+function vaapiDeviceArgs() {
+  const device = linuxRenderDevicePath()
+  return device ? ['-vaapi_device', device] : []
+}
+
 function ffmpegEncoders() {
   return execFileSync(process.env.FFMPEG_PATH || 'ffmpeg', ['-hide_banner', '-encoders'], {
     encoding: 'utf8',
@@ -72,30 +108,53 @@ function ffmpegEncoders() {
   })
 }
 
+function probeInputForBackend(backend: Exclude<HardwareBackend, 'auto' | 'cpu'>) {
+  return backend === 'qsv' || backend === 'vaapi' ? 'testsrc2=size=1280x720:rate=30' : 'testsrc2=size=640x360:rate=30'
+}
+
+function probeArgsForBackend(backend: Exclude<HardwareBackend, 'auto' | 'cpu'>) {
+  return [
+    '-hide_banner',
+    '-loglevel', 'error',
+    ...(backend === 'vaapi' ? vaapiDeviceArgs() : []),
+    ...(backend === 'qsv' ? qsvDeviceArgs() : []),
+    '-f', 'lavfi',
+    '-i', probeInputForBackend(backend),
+    '-frames:v', '30',
+    '-vf', backend === 'vaapi' ? 'format=nv12,hwupload' : probeFormatForBackend(backend),
+    '-an',
+    '-c:v', encoderForBackend(backend),
+    ...(backend === 'qsv' ? ['-preset', 'veryfast'] : backend === 'amf' ? ['-quality', 'speed'] : []),
+    ...(backend === 'qsv' ? ['-b:v', '3000k', '-maxrate', '4000k', '-bufsize', '6000k'] : []),
+    ...(backend === 'vaapi' ? ['-qp', '23'] : []),
+    '-f', 'null',
+    '-',
+  ]
+}
+
+function execErrorOutput(err: unknown) {
+  if (err && typeof err === 'object') {
+    const maybeError = err as { stderr?: Buffer | string; stdout?: Buffer | string; message?: string }
+    const output = maybeError.stderr || maybeError.stdout || maybeError.message
+    if (Buffer.isBuffer(output)) return output.toString()
+    if (typeof output === 'string') return output
+  }
+  return String(err)
+}
+
 function testHardwareBackend(backend: Exclude<HardwareBackend, 'auto' | 'cpu'>, encoders: string) {
   const encoder = encoderForBackend(backend)
   if (!encoders.includes(encoder)) return `${encoder} is not compiled into FFmpeg`
 
   try {
-    execFileSync(process.env.FFMPEG_PATH || 'ffmpeg', [
-      '-hide_banner',
-      '-loglevel', 'error',
-      '-f', 'lavfi',
-      '-i', 'testsrc2=size=128x72:rate=30',
-      '-t', '0.5',
-      '-vf', probeFormatForBackend(backend),
-      '-an',
-      '-c:v', encoder,
-      '-f', 'null',
-      '-',
-    ], {
+    execFileSync(process.env.FFMPEG_PATH || 'ffmpeg', probeArgsForBackend(backend), {
       encoding: 'utf8',
       timeout: 8000,
     })
     return 'ok'
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err)
-    return message.slice(-500)
+    const message = execErrorOutput(err).trim()
+    return message.slice(-1000)
   }
 }
 
@@ -118,7 +177,7 @@ function probeRecommendedHardwareBackend() {
   for (const backend of HARDWARE_PROBE_ORDER) {
     const result = testHardwareBackend(backend, encoders)
     hardwareProbeResults[backend] = result
-    console.log(`[transcode] hardware probe backend=${backend} encoder=${encoderForBackend(backend)} result="${result}"`)
+    console.log(`[transcode] hardware probe backend=${backend} encoder=${encoderForBackend(backend)}${backend === 'qsv' ? ` qsvInit=${qsvInitMode()} renderDevice=${linuxRenderDevicePath() ?? 'none'}` : ''}${backend === 'vaapi' ? ` renderDevice=${linuxRenderDevicePath() ?? 'none'}` : ''} result="${result}"`)
     if (result === 'ok') {
       detectedHardwareBackend = backend
       process.env.TRANSCODE_RECOMMENDED_BACKEND = backend
@@ -223,6 +282,18 @@ function cpuH264Args(height: number, videoBitrate: string, maxrate: string, bufs
 function hardwareH264Args(backend: Exclude<HardwareBackend, 'auto'>, height: number, videoBitrate: string, maxrate: string, bufsize: string, audioBitrate: string) {
   if (backend === 'cpu') return cpuH264Args(height, videoBitrate, maxrate, bufsize, audioBitrate)
 
+  if (backend === 'vaapi') {
+    return [
+      '-map', '0:v:0?', '-map', '0:a:0?',
+      '-vf', `scale=-2:${height}:flags=lanczos,format=nv12,hwupload`,
+      '-c:v', 'h264_vaapi',
+      '-force_key_frames', 'expr:gte(t,n_forced*2)',
+      '-qp', height >= 1080 ? '21' : '23',
+      '-c:a', 'aac',
+      '-b:a', audioBitrate,
+    ]
+  }
+
   if (backend === 'videotoolbox') {
     return [
       '-map', '0:v:0?', '-map', '0:a:0?',
@@ -281,6 +352,20 @@ function hardwareFilteredH264Args(backend: Exclude<HardwareBackend, 'auto'>, fil
       '-b:v', videoBitrate,
       '-maxrate', maxrate,
       '-bufsize', bufsize,
+      '-c:a', 'aac',
+      '-b:a', audioBitrate,
+    ]
+  }
+
+  if (backend === 'vaapi') {
+    return [
+      '-map', '0:v:0?', '-map', '0:a:0?',
+      '-vf', `${filter},format=nv12,hwupload`,
+      '-c:v', 'h264_vaapi',
+      '-r', String(fps),
+      '-g', String(fps * 2),
+      '-force_key_frames', 'expr:gte(t,n_forced*2)',
+      '-qp', '23',
       '-c:a', 'aac',
       '-b:a', audioBitrate,
     ]
@@ -474,6 +559,8 @@ function ffmpegArgs(sourceUrl: string, outputDir: string, profile: PlaybackProfi
     '-loglevel', 'warning',
     '-nostdin',
     '-fflags', '+genpts',
+    ...(backend === 'vaapi' ? vaapiDeviceArgs() : []),
+    ...(backend === 'qsv' ? qsvDeviceArgs() : []),
     ...threadingArgs(),
     ...inputArgs(sourceUrl),
     ...profileArgs(profile, backend),

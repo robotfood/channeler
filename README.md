@@ -31,7 +31,25 @@ Open [http://localhost:3000](http://localhost:3000).
 
 If stream proxying is enabled and clients need to reach this app on your LAN or through a reverse proxy, set `PUBLIC_BASE_URL` to the externally reachable base URL so generated proxy stream URLs use the correct address.
 
-Server playback profiles that remux or transcode streams require FFmpeg. The Docker image uses a Debian slim runtime with FFmpeg plus Intel media packages for QSV. If you run the app outside Docker, install FFmpeg and make sure `ffmpeg` is on `PATH`, or set `FFMPEG_PATH=/path/to/ffmpeg`. Hardware profiles use each playlist's Hardware Backend setting: `auto`, `qsv`, `videotoolbox`, or `cpu`. QSV assumes the container can access Intel Quick Sync, usually by passing `/dev/dri` from the host into the container. On Apple hardware, use `videotoolbox`; FFmpeg exposes Apple hardware H.264 through VideoToolbox rather than a separate Metal encoder.
+Server playback profiles that remux or transcode streams require FFmpeg. The Docker image uses a Debian slim runtime with FFmpeg plus Intel media packages for VAAPI/QSV. If you run the app outside Docker, install FFmpeg and make sure `ffmpeg` is on `PATH`, or set `FFMPEG_PATH=/path/to/ffmpeg`. Hardware profiles use each playlist's Hardware Backend setting: `auto`, `vaapi`, `qsv`, `videotoolbox`, or `cpu`. Intel Linux/Unraid containers should usually use `auto` or `vaapi` with `/dev/dri` passed through. On Apple hardware, use `videotoolbox`; FFmpeg exposes Apple hardware H.264 through VideoToolbox rather than a separate Metal encoder.
+
+For Intel QSV in Docker/Unraid, pass the render device into the container:
+
+```bash
+docker run -d \
+  --device /dev/dri:/dev/dri \
+  -e TRANSCODE_BACKEND=auto \
+  -p 3000:3000 \
+  -v /your/host/path/data:/app/data \
+  --name channeler \
+  channeler
+```
+
+When `/dev/dri` is present, the container runs a startup Intel hardware diagnostic and logs whether FFmpeg can complete 720p `h264_vaapi` and `h264_qsv` validation encodes. To force the check manually inside a running container:
+
+```bash
+docker exec channeler channeler-qsv-check
+```
 
 ## Server playback profiles
 
@@ -102,10 +120,14 @@ Runs on [http://localhost:3000](http://localhost:3000). Data is stored in `./dat
 | `PORT` | `3000` | Port to listen on |
 | `PUBLIC_BASE_URL` | unset | External base URL used when generating proxied stream URLs, e.g. `http://your-server:3000` |
 | `FFMPEG_PATH` | `ffmpeg` | FFmpeg binary used by server playback profiles |
-| `TRANSCODE_BACKEND` | `auto` | Default hardware profile backend for playlists that use Auto: `auto`, `qsv`, `amf`, `videotoolbox`, or `cpu` |
+| `TRANSCODE_BACKEND` | `auto` | Default hardware profile backend for playlists that use Auto: `auto`, `vaapi`, `qsv`, `amf`, `videotoolbox`, or `cpu` |
+| `TRANSCODE_RENDER_DEVICE` | `/dev/dri/renderD128` | Linux render device used by VAAPI/QSV container diagnostics and FFmpeg hardware initialization |
+| `TRANSCODE_QSV_DEVICE` | unset | Deprecated alias for `TRANSCODE_RENDER_DEVICE` |
 | `TRANSCODE_RECOMMENDED_BACKEND` | set at runtime | App-populated recommendation from short FFmpeg hardware encode probes |
-| `TRANSCODE_RECOMMENDED_ENCODER` | set at runtime | FFmpeg encoder selected by the runtime probe, such as `h264_qsv`, `h264_amf`, `h264_videotoolbox`, or `libx264` |
+| `TRANSCODE_RECOMMENDED_ENCODER` | set at runtime | FFmpeg encoder selected by the runtime probe, such as `h264_vaapi`, `h264_qsv`, `h264_amf`, `h264_videotoolbox`, or `libx264` |
 | `TRANSCODE_THREADS` | `0` | FFmpeg thread count for transcode/filter work. `0` lets FFmpeg auto-size; set a number to cap CPU use |
+| `CHANNELER_RUN_QSV_CHECK` | `false` | Force the Docker startup QSV diagnostic even when `/dev/dri` is not detected |
+| `CHANNELER_SKIP_CONTAINER_CHECKS` | `false` | Skip Docker startup diagnostics |
 
 ### Transcode backends
 
@@ -113,11 +135,37 @@ Each playlist can choose a Hardware Backend in settings. `TRANSCODE_BACKEND` is 
 
 | Backend | What it uses | Best for | Notes |
 |---|---|---|---|
-| `auto` | Runs short FFmpeg test encodes for hardware backends, then falls back to CPU | Default deployments | The app stores the selected result in `TRANSCODE_RECOMMENDED_BACKEND` for the current Node process |
+| `auto` | Runs short FFmpeg test encodes for hardware backends, then falls back to CPU | Default deployments | Prefers VideoToolbox on macOS and VAAPI on Linux when those probes pass |
+| `vaapi` | Linux VAAPI via FFmpeg `h264_vaapi` | Intel iGPU Docker/Unraid hosts with `/dev/dri` passed through | Best first choice for Xeon E3 / Intel P630 Linux containers when QSV rejects the runtime parameters |
 | `qsv` | Intel Quick Sync via FFmpeg `h264_qsv` | Intel iGPU servers and Unraid hosts with `/dev/dri` passed through | Best match for Xeon E3-1245 v6 / Intel P630 |
 | `amf` | AMD AMF via FFmpeg `h264_amf` | Hosts with supported AMD GPU encode access | Requires an FFmpeg build with AMF plus the host GPU/runtime exposed to the app |
 | `videotoolbox` | Apple VideoToolbox via FFmpeg `h264_videotoolbox` | macOS hosts and Apple Silicon | This is the practical Apple hardware encoder path; it is not exposed as a separate Metal encoder in FFmpeg |
 | `cpu` | FFmpeg `libx264` software encoding | Debugging or hosts without hardware encoder access | Most compatible, but highest CPU usage |
+
+### Transcode profile smoke test
+
+Run the real FFmpeg profile test on the machine or container that will do transcoding:
+
+```bash
+npm run test:transcode
+```
+
+The test uses synthetic video/audio, generates HLS output for each playback profile, and reports pass/fail/skip for hardware backends. By default it skips the slowest 4K and 1080p60 checks. Use `-- --all` to include them:
+
+```bash
+npm run test:transcode -- --all
+```
+
+Useful options:
+
+| Option / env var | Example | Description |
+|---|---|---|
+| `--backends=` / `TRANSCODE_TEST_BACKENDS` | `qsv,videotoolbox,cpu` | Limit hardware backend combinations |
+| `--profiles=` / `TRANSCODE_TEST_PROFILES` | `qsv_720p,hardware_smooth_720p60` | Limit playback profiles |
+| `--keep-output` | | Keep generated HLS files under `/tmp` for inspection |
+| `FFMPEG_PATH` | `/usr/local/bin/ffmpeg` | Test a specific FFmpeg binary |
+| `TRANSCODE_TEST_DURATION` | `8` | Number of seconds of synthetic media per test |
+| `TRANSCODE_TEST_TIMEOUT_MS` | `120000` | Per-profile FFmpeg timeout |
 
 ## Xtream Integration Test
 
