@@ -57,7 +57,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ cha
 
   try {
     const session = await ensureTranscodeSession(channel, playlist)
-    const filePath = getTranscodeFilePath(channel.id, playlist.playbackProfile, playlist.transcodeBackend, path)
+    const filePath = getTranscodeFilePath(channel.id, playlist.playbackProfile, playlist.transcodeBackend, playlist.audioProfile, path)
     const data = await readFileWithSegmentWait(filePath, () => session.process.exitCode === null)
     return new NextResponse(data, {
       headers: {

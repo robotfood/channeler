@@ -23,6 +23,7 @@ export async function getDashboardPlaylists() {
       bufferSize: playlists.bufferSize,
       playbackProfile: playlists.playbackProfile,
       transcodeBackend: playlists.transcodeBackend,
+      audioProfile: playlists.audioProfile,
       proxyStreams: playlists.proxyStreams,
       proxyEpg: playlists.proxyEpg,
       createdAt: playlists.createdAt,
@@ -107,6 +108,7 @@ export async function getFavoriteChannels() {
     bufferSize: playlists.bufferSize,
     playbackProfile: playlists.playbackProfile,
     transcodeBackend: playlists.transcodeBackend,
+    audioProfile: playlists.audioProfile,
   })
     .from(channels)
     .innerJoin(playlists, eq(channels.playlistId, playlists.id))

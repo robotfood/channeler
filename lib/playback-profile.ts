@@ -5,15 +5,11 @@ export const PLAYBACK_PROFILES = [
   'transcode_720p',
   'transcode_1080p',
   'transcode_4k',
-  'transcode_4k_fast',
-  'transcode_4k_ultra',
   'enhanced_1080p',
   'clean_1080p',
-  'sharp_1080p',
   'smooth_720p60',
   'smooth_1080p60',
   'sports_720p60',
-  'sports_lite_720p60',
 ] as const
 
 export type PlaybackProfile = typeof PLAYBACK_PROFILES[number]

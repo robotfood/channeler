@@ -71,22 +71,6 @@ const PLAYBACK_PROFILES = [
     quality: 'Lanczos scaling',
   },
   {
-    value: 'transcode_4k_fast',
-    label: '4K (Pixel Doubling)',
-    detail: 'Fastest 4K upscale using integer scaling. Sharp look, no blurring, lowest CPU cost.',
-    fps: 'Source',
-    res: '4K',
-    quality: 'Nearest Neighbor Scaling',
-  },
-  {
-    value: 'transcode_4k_ultra',
-    label: '4K (Ultra Sharpened)',
-    detail: 'Absolute highest quality 4K upscale. Uses Lanczos scaling plus a refinement sharpening pass.',
-    fps: 'Source',
-    res: '4K',
-    quality: 'Lanczos + Unsharp Mask',
-  },
-  {
     value: 'enhanced_1080p',
     label: 'Enhanced 1080p',
     detail: 'Deinterlaces, scales, and lightly sharpens to improve soft or interlaced feeds.',
@@ -103,44 +87,28 @@ const PLAYBACK_PROFILES = [
     quality: 'Deinterlace, Denoise, Scale, Sharpen',
   },
   {
-    value: 'sharp_1080p',
-    label: 'Sharp 1080p',
-    detail: 'Applies stronger sharpening for soft sources; best tested per playlist.',
-    fps: 'Source',
-    res: '1080p',
-    quality: 'Deinterlace, Scale, Strong Sharpen',
-  },
-  {
     value: 'smooth_720p60',
-    label: 'Smooth 720p60',
-    detail: 'Lightweight 60 FPS motion. Uses hardware-accelerated deinterlacing for maximum stability.',
+    label: 'Deinterlace 720p60',
+    detail: 'Turns interlaced field motion into 60 fps output at 720p. Best for true interlaced sports/news feeds.',
     fps: '60',
     res: '720p',
-    quality: 'Hardware VPP',
+    quality: 'Field-rate deinterlace',
   },
   {
     value: 'smooth_1080p60',
-    label: 'Smooth 1080p60',
-    detail: 'Hardware-accelerated 1080p 60 FPS. Best for stable 1080i high-bandwidth feeds.',
+    label: 'Deinterlace 1080p60',
+    detail: 'Heavy profile for true 1080i feeds only. Requires strong CPU/GPU headroom and may stall weaker servers.',
     fps: '60',
     res: '1080p',
-    quality: 'Hardware VPP',
+    quality: 'Heavy field-rate deinterlace',
   },
   {
     value: 'sports_720p60',
     label: 'Sports 720p60',
-    detail: 'Hardware-accelerated 60 FPS with subtle detail enhancement and noise reduction.',
+    detail: 'Field-rate deinterlaces to 720p60 with subtle detail enhancement and noise reduction where supported.',
     fps: '60',
     res: '720p',
-    quality: 'Hardware VPP + Enhancement',
-  },
-  {
-    value: 'sports_lite_720p60',
-    label: 'Sports Lite 60 FPS',
-    detail: 'Fastest 60 FPS profile. Absolute minimum processing for the oldest CPUs.',
-    fps: '60',
-    res: '720p',
-    quality: 'Hardware VPP (Low Power)',
+    quality: 'Deinterlace + enhancement',
   },
 ]
 
@@ -154,6 +122,19 @@ const TRANSCODE_BACKENDS = [
   { name: 'videotoolbox', detail: 'Uses Apple hardware encoding through FFmpeg h264_videotoolbox on macOS.' },
   { name: 'cpu', detail: 'Forces libx264 software encoding. Most compatible, but uses the most CPU.' },
 ]
+
+const AUDIO_PROFILES = [
+  {
+    value: 'standard',
+    label: 'Standard AAC',
+    detail: 'Re-encodes audio for compatibility with a light volume normalization pass while preserving the source channel layout.',
+  },
+  {
+    value: 'enhanced_5_1',
+    label: 'Enhanced 5.1',
+    detail: 'Applies aggressive volume normalization and attempts a stereo-to-5.1 upmix. Subjective and higher bitrate.',
+  },
+] as const
 
 export default function PlaylistSettingsClient({ initialData, playlistId }: {
   initialData: PlaylistSettings & { log: RefreshLogEntry[] }
@@ -173,6 +154,7 @@ export default function PlaylistSettingsClient({ initialData, playlistId }: {
   const [epgRefreshInterval, setEpgRefreshInterval] = useState(initialData.epgRefreshInterval ?? 24)
   const [bufferSize, setBufferSize] = useState(initialData.bufferSize ?? 'medium')
   const [transcodeBackend, setTranscodeBackend] = useState(initialData.transcodeBackend ?? 'auto')
+  const [audioProfile, setAudioProfile] = useState(initialData.audioProfile ?? 'standard')
   const [playbackProfile, setPlaybackProfile] = useState(
     initialData.playbackProfile === 'direct' && initialData.proxyStreams ? 'proxy' : initialData.playbackProfile ?? 'direct'
   )
@@ -238,6 +220,7 @@ export default function PlaylistSettingsClient({ initialData, playlistId }: {
         bufferSize,
         playbackProfile,
         transcodeBackend,
+        audioProfile,
         proxyStreams: playbackProfile !== 'direct',
         proxyEpg,
         xtreamServerUrl: data.m3uSourceType === 'xtream' ? xtreamServerUrl || null : null,
@@ -436,6 +419,23 @@ export default function PlaylistSettingsClient({ initialData, playlistId }: {
                     ))}
                   </dl>
                 </div>
+              </fieldset>
+
+              <fieldset className="space-y-2 rounded-lg border border-gray-200 bg-white p-3 dark:border-gray-800 dark:bg-gray-950/30">
+                <legend className="px-1 text-xs font-medium uppercase tracking-wide text-gray-400 dark:text-gray-500">Audio processing</legend>
+                <p className="px-1 text-[10px] leading-4 text-gray-400 dark:text-gray-500">These options are separate from the playback profile and only affect encoded output.</p>
+                {AUDIO_PROFILES.map(profile => (
+                  <label key={profile.value}
+                    className={`flex cursor-pointer gap-3 rounded-md border p-3 transition-colors ${audioProfile === profile.value ? 'border-blue-500 bg-blue-50 dark:bg-blue-950/30' : 'border-gray-200 bg-gray-50 hover:border-gray-300 dark:border-gray-800 dark:bg-gray-900 dark:hover:border-gray-700'}`}>
+                    <input type="radio" name="audioProfile" value={profile.value} checked={audioProfile === profile.value}
+                      onChange={() => setAudioProfile(profile.value)}
+                      className="mt-1 border-gray-300 text-blue-600 focus:ring-blue-500 dark:border-gray-600" />
+                    <span>
+                      <span className="block text-sm font-medium text-gray-800 dark:text-gray-200">{profile.label}</span>
+                      <span className="block text-xs leading-5 text-gray-500 dark:text-gray-500">{profile.detail}</span>
+                    </span>
+                  </label>
+                ))}
               </fieldset>
             </div>
           )}

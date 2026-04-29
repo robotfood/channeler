@@ -11,11 +11,14 @@ import {
   type TranscodeBackend,
   vaapiDeviceArgs as vaapiDeviceArgsForDevice,
 } from '../lib/ffmpeg-transcode-args'
+import { normalizePlaybackProfile } from '../lib/playback-profile'
+import { normalizeAudioProfile } from '../lib/audio-profile'
 
 const FFMPEG = process.env.FFMPEG_PATH || 'ffmpeg'
 const DURATION_SECONDS = parseFloat(process.env.TRANSCODE_TEST_DURATION || '5')
 const TEST_TIMEOUT_MS = parseInt(process.env.TRANSCODE_TEST_TIMEOUT_MS || '90000', 10)
 const BACKENDS = TRANSCODE_BACKENDS
+const AUDIO_PROFILE = normalizeAudioProfile(optionValue('--audio-profile') || process.env.TRANSCODE_TEST_AUDIO_PROFILE)
 
 type Backend = TranscodeBackend
 type Result = {
@@ -46,7 +49,13 @@ function selectedBackends(): Backend[] {
 
 function selectedProfiles() {
   const raw = optionValue('--profiles') || process.env.TRANSCODE_TEST_PROFILES
-  if (raw) return raw.split(',').map(value => value.trim()).filter(Boolean)
+  if (raw) {
+    return raw.split(',').map(value => {
+      const normalized = normalizePlaybackProfile(value.trim())
+      if (normalized === 'direct' || normalized === 'proxy') throw new Error(`Unknown transcode profile: ${value.trim()}`)
+      return normalized
+    }).filter(Boolean)
+  }
 
   const base = [
     'stable_hls',
@@ -54,12 +63,11 @@ function selectedProfiles() {
     'transcode_1080p',
     'enhanced_1080p',
     'clean_1080p',
-    'sharp_1080p',
     'smooth_720p60',
     'sports_720p60',
   ]
 
-  return hasArg('--all') ? [...base, 'transcode_4k', 'transcode_4k_ultra', 'smooth_1080p60'] : base
+  return hasArg('--all') ? [...base, 'transcode_4k', 'smooth_1080p60'] : base
 }
 
 function qsvDevicePath() {
@@ -172,6 +180,7 @@ function runProfile(profile: string, backend: Backend, root: string, stableInput
     ...inputArgs(profile, stableInput),
     ...profileArgs(profile, backend, {
       audioInputIndex: profile === 'stable_hls' ? 0 : 1,
+      audioProfile: AUDIO_PROFILE,
       unknownProfile: 'throw',
     }),
     ...hlsArgs(outputDir),
@@ -237,6 +246,7 @@ function main() {
   console.log(`Temp output: ${tempDir}`)
   console.log(`Profiles: ${profiles.join(', ')}`)
   console.log(`Hardware backends: ${backends.join(', ')}`)
+  console.log(`Audio profile: ${AUDIO_PROFILE}`)
 
   try {
     const encoders = ffmpegEncoders()

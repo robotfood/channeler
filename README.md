@@ -67,16 +67,16 @@ Playback profiles control whether clients receive the original stream, a proxied
 | Hardware 4K | Hardware H.264 encode to 2160p HLS using QSV, Apple VideoToolbox, or CPU fallback | XL | Medium to high | High | Higher-bitrate 4K output for capable local clients |
 | Enhanced 1080p | Deinterlaces, scales, sharpens, then CPU transcodes | Large | High | None | General quality improvement for soft/interlaced channels |
 | Clean 1080p | Deinterlaces, denoises, lightly sharpens, then CPU transcodes | Large | High | None | Noisy or blocky low-bitrate channels |
-| Sharp 1080p | Deinterlaces, scales, stronger sharpening, then CPU transcodes | Large | High | None | Soft SD/720p channels that need edge detail |
-| Smooth 720p60 | CPU motion interpolation to 60 fps at 720p | XL | Very high | None | Testing smoother motion with lower resolution |
-| Hardware Smooth 720p60 | CPU motion interpolation to 60 fps at 720p, then hardware H.264 encode | XL | High | Medium | Smoother sports/news with less encode load |
-| Smooth 1080p60 | CPU motion interpolation to 60 fps at 1080p | XL | Extreme | None | Only if the server has enough CPU headroom |
-| Sports 720p60 | Deinterlaces, sharpens, and interpolates to 60 fps at 720p | XL | Very high | None | Sports channels where smoother motion matters |
-| Hardware Sports 720p60 | CPU deinterlaces, sharpens, interpolates to 60 fps, then hardware H.264 encode | XL | High | Medium | Best first try for sports on Intel QSV systems |
+| Deinterlace 720p60 | Converts interlaced field motion to 60 fps output at 720p | XL | High | Low to medium | True interlaced sports/news feeds where field-rate motion matters |
+| Deinterlace 1080p60 | Heavy field-rate deinterlace for true 1080i feeds | XL | Very high | Medium to high | Only for stable high-bitrate 1080i feeds on capable servers |
+| Sports 720p60 | Field-rate deinterlaces to 720p60 with sharpening and hardware detail/denoise where supported | XL | High | Medium | Sports channels on QSV/VAAPI systems |
+| Hardware Sports 720p60 | Hardware deinterlaces and encodes 720p60 with QSV detail/denoise where supported | XL | Medium | Medium | Best first try for sports on Intel QSV systems |
 
-On the Xeon E3-1245 v6 / Intel HD Graphics P630, start with Stable HLS, Hardware 720p, Enhanced 1080p, and Hardware Smooth 720p60 for sports. Treat Hardware 4K and Smooth 1080p60 as experimental because they can be bandwidth-heavy or CPU-heavy depending on the stream.
+On the Xeon E3-1245 v6 / Intel HD Graphics P630, start with Stable HLS, Hardware 720p, Enhanced 1080p, and Sports 720p60 for sports. Treat Hardware 4K and Deinterlace 1080p60 as experimental because they can be bandwidth-heavy or CPU-heavy depending on the stream.
 
 The buffer setting controls the steady-state playback buffer, not a long startup wait. The player starts close to the live edge and then fills the selected buffer size in the background. Server-generated HLS uses short 2-second segments to reduce channel-change delay while still allowing larger buffers for unstable or CPU-heavy profiles.
+
+Audio processing is separate from the video profile. Standard AAC re-encodes audio for compatibility with a light normalization pass while preserving the source channel layout. Enhanced 5.1 applies stronger dynamic normalization and a more aggressive surround upmix using FFmpeg's `surround` filter; it pushes stereo harder into a 5.1 field and is best used only when you want that processed sound.
 
 ## Data storage
 
@@ -126,12 +126,13 @@ Runs on [http://localhost:3000](http://localhost:3000). Data is stored in `./dat
 | `TRANSCODE_RECOMMENDED_BACKEND` | set at runtime | App-populated recommendation from short FFmpeg hardware encode probes |
 | `TRANSCODE_RECOMMENDED_ENCODER` | set at runtime | FFmpeg encoder selected by the runtime probe, such as `h264_vaapi`, `h264_qsv`, `h264_amf`, `h264_videotoolbox`, or `libx264` |
 | `TRANSCODE_THREADS` | `0` | FFmpeg thread count for transcode/filter work. `0` lets FFmpeg auto-size; set a number to cap CPU use |
+| `TRANSCODE_TEST_AUDIO_PROFILE` | `standard` | Audio profile used by the transcode smoke test: `standard` or `enhanced_5_1` |
 | `CHANNELER_RUN_QSV_CHECK` | `false` | Force the Docker startup QSV diagnostic even when `/dev/dri` is not detected |
 | `CHANNELER_SKIP_CONTAINER_CHECKS` | `false` | Skip Docker startup diagnostics |
 
 ### Transcode backends
 
-Each playlist can choose a Hardware Backend in settings. `TRANSCODE_BACKEND` is only the server default behind Auto. These backend choices only affect Hardware playback profiles. CPU-only profiles such as Enhanced, Clean, Sharp, and Smooth still use FFmpeg software filters and `libx264`.
+Each playlist can choose a Hardware Backend in settings. `TRANSCODE_BACKEND` is only the server default behind Auto. These backend choices only affect Hardware playback profiles. CPU-only profiles such as Enhanced and Clean still use FFmpeg software filters and `libx264`.
 
 | Backend | What it uses | Best for | Notes |
 |---|---|---|---|
@@ -162,6 +163,7 @@ Useful options:
 |---|---|---|
 | `--backends=` / `TRANSCODE_TEST_BACKENDS` | `qsv,videotoolbox,cpu` | Limit hardware backend combinations |
 | `--profiles=` / `TRANSCODE_TEST_PROFILES` | `qsv_720p,hardware_smooth_720p60` | Limit playback profiles |
+| `--audio-profile=` / `TRANSCODE_TEST_AUDIO_PROFILE` | `enhanced_5_1` | Test standard AAC or enhanced 5.1 audio processing |
 | `--keep-output` | | Keep generated HLS files under `/tmp` for inspection |
 | `FFMPEG_PATH` | `/usr/local/bin/ffmpeg` | Test a specific FFmpeg binary |
 | `TRANSCODE_TEST_DURATION` | `8` | Number of seconds of synthetic media per test |

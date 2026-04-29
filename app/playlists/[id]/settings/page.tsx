@@ -23,6 +23,7 @@ function toPlaylistSettings(data: PlaylistData) {
     bufferSize: data.bufferSize,
     playbackProfile: data.playbackProfile,
     transcodeBackend: data.transcodeBackend,
+    audioProfile: data.audioProfile,
     proxyStreams: data.proxyStreams,
     proxyEpg: data.proxyEpg,
     createdAt: data.createdAt,

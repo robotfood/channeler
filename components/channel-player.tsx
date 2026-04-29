@@ -51,15 +51,11 @@ const PROFILES = [
   { value: 'stable_hls', label: 'Stable HLS Remux' },
   { value: 'transcode_720p', label: '720p Transcode (Min)' },
   { value: 'transcode_1080p', label: '1080p Transcode (Min)' },
-  { value: 'transcode_4k_fast', label: '4K Pixel Doubling' },
-  { value: 'transcode_4k_ultra', label: '4K Ultra Sharpened' },
   { value: 'enhanced_1080p', label: 'Enhanced 1080p' },
   { value: 'clean_1080p', label: 'Clean 1080p' },
-  { value: 'sharp_1080p', label: 'Sharp 1080p' },
-  { value: 'smooth_720p60', label: 'Smooth 720p60' },
-  { value: 'smooth_1080p60', label: 'Smooth 1080p60' },
+  { value: 'smooth_720p60', label: 'Deinterlace 720p60' },
+  { value: 'smooth_1080p60', label: 'Deinterlace 1080p60' },
   { value: 'sports_720p60', label: 'Sports 720p60' },
-  { value: 'sports_lite_720p60', label: 'Sports Lite 60 FPS' },
 ]
 
 const BUFFER_CONFIGS: Record<string, {
@@ -82,15 +78,11 @@ const PLAYBACK_PROFILE_LABELS: Record<string, string> = {
   transcode_720p: '720p Transcode (Min)',
   transcode_1080p: '1080p Transcode (Min)',
   transcode_4k: '4K Transcode',
-  transcode_4k_fast: '4K (Pixel Doubling)',
-  transcode_4k_ultra: '4K (Ultra Sharpened)',
   enhanced_1080p: 'Enhanced 1080p',
   clean_1080p: 'Clean 1080p',
-  sharp_1080p: 'Sharp 1080p',
-  smooth_720p60: 'Smooth 720p60',
-  smooth_1080p60: 'Smooth 1080p60',
+  smooth_720p60: 'Deinterlace 720p60',
+  smooth_1080p60: 'Deinterlace 1080p60',
   sports_720p60: 'Sports 720p60',
-  sports_lite_720p60: 'Sports Lite 60 FPS',
 }
 
 function playbackModeLabel(playbackProfile: string | null | undefined, proxyStreams: boolean | undefined) {
@@ -118,12 +110,16 @@ export default function ChannelPlayer({ url, title, channelId, playlistId, buffe
   const [streamUrl, setStreamUrl] = useState(url)
   const [playbackStats, setPlaybackStats] = useState<PlaybackStats>({ width: null, height: null, fps: null })
   const [transcodeStats, setTranscodeStats] = useState<TranscodeStats | null>(null)
+  const [isStoppingTranscode, setIsStoppingTranscode] = useState(false)
+  const [transcodeStopped, setTranscodeStopped] = useState(false)
   const hlsRef = useRef<Hls | null>(null)
   const retryCountRef = useRef(0)
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const frameStatsRef = useRef({ frames: 0, startedAt: 0 })
   const versionRef = useRef(0)
+  const transcodeStopRequestedRef = useRef(false)
   const modeLabel = playbackModeLabel(activeProfile, proxyStreams)
+  const isTranscodedStream = streamUrl.startsWith('/api/transcode/')
 
   useEffect(() => {
     function handleUnhandledRejection(event: PromiseRejectionEvent) {
@@ -248,6 +244,8 @@ export default function ChannelPlayer({ url, title, channelId, playlistId, buffe
       // We need to force a URL refresh by adding a cache-buster or just re-setting it
       const base = streamUrl.split('?')[0]
       versionRef.current += 1
+      transcodeStopRequestedRef.current = false
+      setTranscodeStopped(false)
       setStreamUrl(`${base}?v=${versionRef.current}`)
       setShowSettings(false)
     } catch (err) {
@@ -255,8 +253,46 @@ export default function ChannelPlayer({ url, title, channelId, playlistId, buffe
     }
   }
 
+  async function stopTranscoding() {
+    if (!isTranscodedStream || isStoppingTranscode) return
+
+    transcodeStopRequestedRef.current = true
+    setIsStoppingTranscode(true)
+    setError(null)
+
+    if (reconnectTimerRef.current) {
+      clearTimeout(reconnectTimerRef.current)
+      reconnectTimerRef.current = null
+    }
+
+    if (hlsRef.current) {
+      hlsRef.current.destroy()
+      hlsRef.current = null
+    }
+
+    if (videoRef.current) {
+      videoRef.current.pause()
+      videoRef.current.removeAttribute('src')
+      videoRef.current.load()
+    }
+
+    try {
+      const res = await fetch(`/api/transcode/${channelId}/stop`, { method: 'POST' })
+      if (!res.ok) throw new Error(await res.text())
+      setTranscodeStats(null)
+      setTranscodeStopped(true)
+      setError(null)
+    } catch (err) {
+      transcodeStopRequestedRef.current = false
+      setTranscodeStopped(false)
+      setError(err instanceof Error ? err.message : 'Unable to stop transcoding')
+    } finally {
+      setIsStoppingTranscode(false)
+    }
+  }
+
   useEffect(() => {
-    if (!streamUrl.startsWith('/api/transcode/')) {
+    if (!isTranscodedStream) {
       const resetTimer = setTimeout(() => setTranscodeStats(null), 0)
       return () => clearTimeout(resetTimer)
     }
@@ -297,13 +333,15 @@ export default function ChannelPlayer({ url, title, channelId, playlistId, buffe
       cancelled = true
       clearInterval(timer)
     }
-  }, [channelId, streamUrl])
+  }, [channelId, isTranscodedStream, streamUrl])
 
   useEffect(() => {
     const video = videoRef.current
     if (!video) return
     const media = video
 
+    transcodeStopRequestedRef.current = false
+    setTranscodeStopped(false)
     setError(null)
     setPlaybackStats({ width: null, height: null, fps: null })
     frameStatsRef.current = { frames: 0, startedAt: 0 }
@@ -367,6 +405,8 @@ export default function ChannelPlayer({ url, title, channelId, playlistId, buffe
         setError(null)
       })
       hls.on(Hls.Events.ERROR, (_event, data) => {
+        if (transcodeStopRequestedRef.current) return
+
         if (data.fatal) {
           switch (data.type) {
             case Hls.ErrorTypes.NETWORK_ERROR:
@@ -499,6 +539,24 @@ export default function ChannelPlayer({ url, title, channelId, playlistId, buffe
             )}
           </div>
 
+          {isTranscodedStream && (
+            <button
+              onClick={stopTranscoding}
+              disabled={isStoppingTranscode || transcodeStopped}
+              className={`p-1 rounded transition-colors ${
+                isStoppingTranscode || transcodeStopped
+                  ? 'text-gray-600 cursor-not-allowed'
+                  : 'text-red-400 hover:text-red-300 hover:bg-red-950/50'
+              }`}
+              title={transcodeStopped ? 'Transcoding stopped' : 'Stop transcoding'}
+              aria-label={transcodeStopped ? 'Transcoding stopped' : 'Stop transcoding'}
+            >
+              <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M7 7h10v10H7z" />
+              </svg>
+            </button>
+          )}
+
           {/* @ts-expect-error google-cast-launcher is a custom element from Cast SDK */}
           <google-cast-launcher />
           <button onClick={toggleFavorite} className={`transition-colors ${isFavorite ? 'text-yellow-500 hover:text-yellow-400' : 'text-gray-400 hover:text-white'}`} title={isFavorite ? 'Remove from favourites' : 'Add to favourites'}>
@@ -521,6 +579,14 @@ export default function ChannelPlayer({ url, title, channelId, playlistId, buffe
             </svg>
             <p className="text-lg font-medium">Casting to device...</p>
             <p className="text-sm text-gray-400 mt-1 italic">Playback continues on your external screen</p>
+          </div>
+        ) : transcodeStopped ? (
+          <div className="p-6 text-center text-gray-300">
+            <svg className="w-12 h-12 mx-auto mb-4 text-red-400 opacity-80" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M7 7h10v10H7z" />
+            </svg>
+            <p className="text-sm font-medium">Transcoding stopped</p>
+            <p className="mt-1 text-xs text-gray-500">Change the playback profile or reopen the channel to start a new session.</p>
           </div>
         ) : error ? (
           <div className="p-6 text-center text-red-400">

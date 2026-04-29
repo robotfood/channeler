@@ -2,6 +2,7 @@ import { execFileSync, spawn, type ChildProcess } from 'node:child_process'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
+import { normalizeAudioProfile, type AudioProfile } from '@/lib/audio-profile'
 import { dataPath } from '@/lib/data-path'
 import {
   encoderForBackend,
@@ -24,6 +25,7 @@ type Session = {
   channelId: number
   profile: PlaybackProfile
   backend: Exclude<HardwareBackend, 'auto'>
+  audioProfile: AudioProfile
   sourceUrl: string
   outputDir: string
   playlistPath: string
@@ -31,11 +33,13 @@ type Session = {
   startedAt: number
   lastAccessedAt: number
   lastError: string | null
+  terminationTimer: ReturnType<typeof setTimeout> | null
 }
 
 const IDLE_TIMEOUT_MS = 90_000
 const STARTUP_TIMEOUT_MS = 20_000
 const HEAVY_STARTUP_TIMEOUT_MS = 45_000
+const FORCE_KILL_TIMEOUT_MS = 5_000
 const sessions = new Map<string, Session>()
 const HARDWARE_BACKENDS = ['auto', ...TRANSCODE_BACKENDS] as const
 const HARDWARE_PROBE_ORDER: Array<Exclude<HardwareBackend, 'auto' | 'cpu'>> =
@@ -199,8 +203,8 @@ function transcodeRoot() {
   return root
 }
 
-function sessionKey(channelId: number, profile: PlaybackProfile, backend: Exclude<HardwareBackend, 'auto'>) {
-  return `${channelId}:${profile}:${backend}`
+function sessionKey(channelId: number, profile: PlaybackProfile, backend: Exclude<HardwareBackend, 'auto'>, audioProfile: AudioProfile) {
+  return `${channelId}:${profile}:${backend}:${audioProfile}`
 }
 
 function summarizeArgs(args: string[]) {
@@ -232,7 +236,7 @@ function inputArgs(sourceUrl: string) {
   ]
 }
 
-function ffmpegArgs(sourceUrl: string, outputDir: string, profile: PlaybackProfile, backend: Exclude<HardwareBackend, 'auto'>) {
+function ffmpegArgs(sourceUrl: string, outputDir: string, profile: PlaybackProfile, backend: Exclude<HardwareBackend, 'auto'>, audioProfile: AudioProfile) {
   return [
     '-hide_banner',
     '-loglevel', 'warning',
@@ -242,13 +246,13 @@ function ffmpegArgs(sourceUrl: string, outputDir: string, profile: PlaybackProfi
     ...(backend === 'qsv' ? qsvDeviceArgs() : []),
     ...threadingArgs(),
     ...inputArgs(sourceUrl),
-    ...profileArgs(profile, backend),
+    ...profileArgs(profile, backend, { audioProfile }),
     ...hlsArgs(outputDir),
   ]
 }
 
 function spawnFfmpeg(args: string[]) {
-  return spawn(process.env.FFMPEG_PATH || 'ffmpeg', args, { stdio: ['ignore', 'pipe', 'pipe'] })
+  return spawn(process.env.FFMPEG_PATH || 'ffmpeg', args, { stdio: ['ignore', 'ignore', 'pipe'] })
 }
 
 function processStats(pid: number | undefined) {
@@ -269,19 +273,76 @@ function processStats(pid: number | undefined) {
   }
 }
 
-function stopSession(key: string) {
+function terminateSession(session: Session, reason: string) {
+  if (session.terminationTimer) return
+
+  if (session.process.exitCode !== null) return
+
+  console.log(`[transcode] stopping channel=${session.channelId} profile=${session.profile} backend=${session.backend} audio=${session.audioProfile} pid=${session.process.pid ?? 'unknown'} reason=${reason}`)
+  session.process.kill('SIGTERM')
+  session.terminationTimer = setTimeout(() => {
+    if (session.process.exitCode === null) {
+      console.warn(`[transcode] force-killing channel=${session.channelId} profile=${session.profile} backend=${session.backend} audio=${session.audioProfile} pid=${session.process.pid ?? 'unknown'} reason=${reason}`)
+      session.process.kill('SIGKILL')
+    }
+  }, FORCE_KILL_TIMEOUT_MS)
+  session.terminationTimer.unref()
+}
+
+function stopSession(key: string, reason = 'idle') {
   const session = sessions.get(key)
   if (!session) return
   sessions.delete(key)
-  if (!session.process.killed) session.process.kill('SIGTERM')
+  terminateSession(session, reason)
+}
+
+function stopAllSessions(reason: string) {
+  let stopped = 0
+  for (const key of Array.from(sessions.keys())) {
+    stopSession(key, reason)
+    stopped += 1
+  }
+  return stopped
+}
+
+export function stopTranscodeSessionsForChannel(channelId: number) {
+  let stopped = 0
+  for (const [key, session] of Array.from(sessions.entries())) {
+    if (session.channelId !== channelId) continue
+    stopSession(key, 'requested')
+    stopped += 1
+  }
+  return stopped
 }
 
 setInterval(() => {
   const now = Date.now()
   for (const [key, session] of sessions) {
-    if (now - session.lastAccessedAt > IDLE_TIMEOUT_MS) stopSession(key)
+    if (now - session.lastAccessedAt > IDLE_TIMEOUT_MS) stopSession(key, 'idle')
   }
 }, 30_000).unref()
+
+const shutdownHandlersRegisteredKey = Symbol.for('channeler.transcodeShutdownHandlersRegistered')
+const globalState = globalThis as typeof globalThis & { [shutdownHandlersRegisteredKey]?: boolean }
+
+if (!globalState[shutdownHandlersRegisteredKey]) {
+  globalState[shutdownHandlersRegisteredKey] = true
+
+  for (const signal of ['SIGINT', 'SIGTERM'] as const) {
+    process.once(signal, () => {
+      const stopped = stopAllSessions(`process-${signal}`)
+      const exitCode = signal === 'SIGINT' ? 130 : 143
+      if (stopped === 0) {
+        process.exit(exitCode)
+        return
+      }
+
+      setTimeout(() => process.exit(exitCode), FORCE_KILL_TIMEOUT_MS + 250)
+    })
+  }
+
+  process.once('beforeExit', () => stopAllSessions('process-beforeExit'))
+}
 
 function waitForPlaylist(session: Session) {
   const startedAt = Date.now()
@@ -297,7 +358,7 @@ function waitForPlaylist(session: Session) {
         return
       }
       if (Date.now() - startedAt > startupTimeout) {
-        stopSession(session.key)
+        stopSession(session.key, 'startup-timeout')
         reject(new Error(`Timed out waiting for FFmpeg HLS playlist for ${session.profile}${session.lastError ? `: ${session.lastError}` : ''}`))
         return
       }
@@ -310,21 +371,22 @@ function waitForPlaylist(session: Session) {
 export async function ensureTranscodeSession(channel: Channel, playlist: Playlist) {
   const profile = normalizePlaybackProfile(playlist.playbackProfile)
   const backend = resolvedHardwareBackend(playlist.transcodeBackend)
-  const key = sessionKey(channel.id, profile, backend)
+  const audioProfile = normalizeAudioProfile(playlist.audioProfile)
+  const key = sessionKey(channel.id, profile, backend, audioProfile)
   const existing = sessions.get(key)
   if (existing && existing.process.exitCode === null) {
     existing.lastAccessedAt = Date.now()
-    console.log(`[transcode] reuse channel=${channel.id} name="${channel.displayName}" profile=${profile} backend=${backend} pid=${existing.process.pid ?? 'unknown'}`)
+    console.log(`[transcode] reuse channel=${channel.id} name="${channel.displayName}" profile=${profile} backend=${backend} audio=${audioProfile} pid=${existing.process.pid ?? 'unknown'}`)
     await waitForPlaylist(existing)
     return existing
   }
 
   if (existing) sessions.delete(key)
 
-  const outputDir = path.join(transcodeRoot(), String(channel.id), profile, backend)
+  const outputDir = path.join(transcodeRoot(), String(channel.id), profile, backend, audioProfile)
   emptyDirectory(outputDir)
-  const args = ffmpegArgs(channel.streamUrl, outputDir, profile, backend)
-  console.log(`[transcode] start channel=${channel.id} name="${channel.displayName}" playlist=${playlist.id} profile=${profile} backend=${backend} requestedBackend=${playlist.transcodeBackend ?? 'auto'} threads=${transcodeThreads() || 'auto'} output=${outputDir}`)
+  const args = ffmpegArgs(channel.streamUrl, outputDir, profile, backend, audioProfile)
+  console.log(`[transcode] start channel=${channel.id} name="${channel.displayName}" playlist=${playlist.id} profile=${profile} backend=${backend} audio=${audioProfile} requestedBackend=${playlist.transcodeBackend ?? 'auto'} threads=${transcodeThreads() || 'auto'} output=${outputDir}`)
   console.log(`[transcode] ffmpeg channel=${channel.id} args=${summarizeArgs(args)}`)
   const process = spawnFfmpeg(args)
   const session: Session = {
@@ -332,6 +394,7 @@ export async function ensureTranscodeSession(channel: Channel, playlist: Playlis
     channelId: channel.id,
     profile,
     backend,
+    audioProfile,
     sourceUrl: channel.streamUrl,
     outputDir,
     playlistPath: path.join(outputDir, 'index.m3u8'),
@@ -339,17 +402,22 @@ export async function ensureTranscodeSession(channel: Channel, playlist: Playlis
     startedAt: Date.now(),
     lastAccessedAt: Date.now(),
     lastError: null,
+    terminationTimer: null,
   }
   sessions.set(key, session)
-  console.log(`[transcode] spawned channel=${channel.id} profile=${profile} backend=${backend} pid=${process.pid ?? 'unknown'}`)
+  console.log(`[transcode] spawned channel=${channel.id} profile=${profile} backend=${backend} audio=${audioProfile} pid=${process.pid ?? 'unknown'}`)
 
   process.stderr.on('data', (chunk: Buffer) => {
     const message = chunk.toString().trim()
     if (message) session.lastError = message.slice(-2000)
   })
   process.on('exit', (code, signal) => {
+    if (session.terminationTimer) {
+      clearTimeout(session.terminationTimer)
+      session.terminationTimer = null
+    }
     const runtimeMs = Date.now() - session.startedAt
-    console.log(`[transcode] exit channel=${channel.id} name="${channel.displayName}" profile=${profile} backend=${backend} pid=${process.pid ?? 'unknown'} code=${code ?? 'null'} signal=${signal ?? 'null'} runtimeMs=${runtimeMs}${session.lastError ? ` lastError=${session.lastError}` : ''}`)
+    console.log(`[transcode] exit channel=${channel.id} name="${channel.displayName}" profile=${profile} backend=${backend} audio=${audioProfile} pid=${process.pid ?? 'unknown'} code=${code ?? 'null'} signal=${signal ?? 'null'} runtimeMs=${runtimeMs}${session.lastError ? ` lastError=${session.lastError}` : ''}`)
     if (sessions.get(key) === session) sessions.delete(key)
   })
 
@@ -357,13 +425,14 @@ export async function ensureTranscodeSession(channel: Channel, playlist: Playlis
   return session
 }
 
-export function getTranscodeFilePath(channelId: number, profileValue: string | null | undefined, backendValue: string | null | undefined, filePath: string[]) {
+export function getTranscodeFilePath(channelId: number, profileValue: string | null | undefined, backendValue: string | null | undefined, audioProfileValue: string | null | undefined, filePath: string[]) {
   const profile = normalizePlaybackProfile(profileValue)
   const backend = resolvedHardwareBackend(backendValue)
+  const audioProfile = normalizeAudioProfile(audioProfileValue)
   const safeParts = filePath.filter(part => part && part !== '.' && part !== '..' && !part.includes('/') && !part.includes('\\'))
   const relativePath = safeParts.length > 0 ? safeParts.join(path.sep) : 'index.m3u8'
-  const fullPath = path.join(transcodeRoot(), String(channelId), profile, backend, relativePath)
-  const root = path.join(transcodeRoot(), String(channelId), profile, backend)
+  const fullPath = path.join(transcodeRoot(), String(channelId), profile, backend, audioProfile, relativePath)
+  const root = path.join(transcodeRoot(), String(channelId), profile, backend, audioProfile)
   if (fullPath !== root && !fullPath.startsWith(`${root}${path.sep}`)) throw new Error('Invalid transcode path')
   return fullPath
 }
@@ -378,6 +447,7 @@ export function listTranscodeSessions() {
     lastError: session.lastError,
     running: session.process.exitCode === null,
     backend: session.backend,
+    audioProfile: session.audioProfile,
     ...processStats(session.process.pid),
   }))
 }
