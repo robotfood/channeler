@@ -42,7 +42,7 @@ const FPS = {
 } as const
 
 const AUDIO_FILTERS = {
-  standard: 'dynaudnorm=f=120:g=8:p=0.96',
+  lightNormalize: 'dynaudnorm=f=120:g=8:p=0.96',
   surroundSafe: 'aformat=channel_layouts=stereo,dynaudnorm=f=150:g=15:p=0.9,surround=chl_out=5.1',
   surroundAggressive: 'aformat=channel_layouts=stereo,dynaudnorm=f=150:g=15:p=0.9,surround=chl_out=5.1:focus=0.8:angle=65:smooth=0.2:level_out=1.15:lfe_mode=add:lfe_low=80:lfe_high=180',
 } as const
@@ -63,8 +63,8 @@ function audioEncodeArgs(budget: Pick<EncodingBudget, 'audioBitrate' | 'enhanced
     args.push('-ac', '6', '-af', AUDIO_FILTERS.surroundAggressive)
   } else if (audioProfile === 'surround_5_1') {
     args.push('-ac', '6', '-af', AUDIO_FILTERS.surroundSafe)
-  } else {
-    args.push('-af', AUDIO_FILTERS.standard)
+  } else if (audioProfile === 'standard') {
+    args.push('-af', AUDIO_FILTERS.lightNormalize)
   }
 
   return args

@@ -26,7 +26,7 @@ export function runMigrations() {
       buffer_size TEXT NOT NULL DEFAULT 'medium',
       playback_profile TEXT NOT NULL DEFAULT 'direct',
       transcode_backend TEXT NOT NULL DEFAULT 'auto',
-      audio_profile TEXT NOT NULL DEFAULT 'standard',
+      audio_profile TEXT NOT NULL DEFAULT 'none',
       proxy_streams INTEGER NOT NULL DEFAULT 0,
       proxy_epg INTEGER NOT NULL DEFAULT 1,
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
@@ -95,7 +95,7 @@ export function runMigrations() {
   try { sqlite.exec(`ALTER TABLE playlists ADD COLUMN buffer_size TEXT NOT NULL DEFAULT 'medium'`) } catch {}
   try { sqlite.exec(`ALTER TABLE playlists ADD COLUMN playback_profile TEXT NOT NULL DEFAULT 'direct'`) } catch {}
   try { sqlite.exec(`ALTER TABLE playlists ADD COLUMN transcode_backend TEXT NOT NULL DEFAULT 'auto'`) } catch {}
-  try { sqlite.exec(`ALTER TABLE playlists ADD COLUMN audio_profile TEXT NOT NULL DEFAULT 'standard'`) } catch {}
+  try { sqlite.exec(`ALTER TABLE playlists ADD COLUMN audio_profile TEXT NOT NULL DEFAULT 'none'`) } catch {}
   try { sqlite.exec(`ALTER TABLE playlists ADD COLUMN xtream_server_url TEXT`) } catch {}
   try { sqlite.exec(`ALTER TABLE playlists ADD COLUMN xtream_username TEXT`) } catch {}
   try { sqlite.exec(`ALTER TABLE playlists ADD COLUMN xtream_password TEXT`) } catch {}

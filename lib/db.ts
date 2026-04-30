@@ -19,7 +19,7 @@ function ensureRuntimeColumns() {
   try { sqlite.exec(`ALTER TABLE playlists ADD COLUMN buffer_size TEXT NOT NULL DEFAULT 'medium'`) } catch {}
   try { sqlite.exec(`ALTER TABLE playlists ADD COLUMN playback_profile TEXT NOT NULL DEFAULT 'direct'`) } catch {}
   try { sqlite.exec(`ALTER TABLE playlists ADD COLUMN transcode_backend TEXT NOT NULL DEFAULT 'auto'`) } catch {}
-  try { sqlite.exec(`ALTER TABLE playlists ADD COLUMN audio_profile TEXT NOT NULL DEFAULT 'standard'`) } catch {}
+  try { sqlite.exec(`ALTER TABLE playlists ADD COLUMN audio_profile TEXT NOT NULL DEFAULT 'none'`) } catch {}
 }
 
 ensureRuntimeColumns()

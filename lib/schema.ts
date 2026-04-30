@@ -21,7 +21,7 @@ export const playlists = sqliteTable('playlists', {
   bufferSize: text('buffer_size').notNull().default('medium'),
   playbackProfile: text('playback_profile').notNull().default('direct'),
   transcodeBackend: text('transcode_backend').notNull().default('auto'),
-  audioProfile: text('audio_profile').notNull().default('standard'),
+  audioProfile: text('audio_profile').notNull().default('none'),
   proxyStreams: integer('proxy_streams', { mode: 'boolean' }).notNull().default(false),
   proxyEpg: integer('proxy_epg', { mode: 'boolean' }).notNull().default(true),
   createdAt: text('created_at').notNull().default(sql`(datetime('now'))`),

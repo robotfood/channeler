@@ -125,9 +125,14 @@ const TRANSCODE_BACKENDS = [
 
 const AUDIO_PROFILES = [
   {
+    value: 'none',
+    label: 'None',
+    detail: 'Re-encodes audio to AAC for compatibility without volume normalization, upmixing, or other audio filters.',
+  },
+  {
     value: 'standard',
-    label: 'Standard AAC',
-    detail: 'Re-encodes audio for compatibility with a light volume normalization pass while preserving the source channel layout.',
+    label: 'Standard AAC + light normalization',
+    detail: 'Re-encodes audio to AAC with a light volume normalization pass while preserving the source channel layout.',
   },
   {
     value: 'surround_5_1',
@@ -159,7 +164,7 @@ export default function PlaylistSettingsClient({ initialData, playlistId }: {
   const [epgRefreshInterval, setEpgRefreshInterval] = useState(initialData.epgRefreshInterval ?? 24)
   const [bufferSize, setBufferSize] = useState(initialData.bufferSize ?? 'medium')
   const [transcodeBackend, setTranscodeBackend] = useState(initialData.transcodeBackend ?? 'auto')
-  const [audioProfile, setAudioProfile] = useState(initialData.audioProfile ?? 'standard')
+  const [audioProfile, setAudioProfile] = useState(initialData.audioProfile ?? 'none')
   const [playbackProfile, setPlaybackProfile] = useState(
     initialData.playbackProfile === 'direct' && initialData.proxyStreams ? 'proxy' : initialData.playbackProfile ?? 'direct'
   )
