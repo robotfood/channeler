@@ -60,23 +60,20 @@ Playback profiles control whether clients receive the original stream, a proxied
 | Direct source | Sends clients to the provider URL directly | Medium | None | None | Lowest latency and no server work |
 | Proxy passthrough | Proxies the original stream through Channeler | Medium | Very low | None | VPN routing, hiding provider URL, connection sharing |
 | Stable HLS remux | Uses FFmpeg to repackage into local HLS without re-encoding when possible | Large | Low | None | Better stability and client compatibility with minimal quality loss |
-| Transcode 720p | CPU transcodes to H.264/AAC 720p HLS | Large | Medium | None | Weak clients, lower bandwidth, normalizing odd streams |
-| Transcode 1080p | CPU transcodes to H.264/AAC 1080p HLS | Large | High | None | Client compatibility at higher resolution |
-| Hardware 720p | Hardware H.264 encode to 720p HLS using QSV, Apple VideoToolbox, or CPU fallback | Large | Low to medium | Medium | Hardware-assisted 720p transcode |
-| Hardware 1080p | Hardware H.264 encode to 1080p HLS using QSV, Apple VideoToolbox, or CPU fallback | Large | Medium | Medium to high | Hardware-assisted 1080p transcode |
-| Hardware 4K | Hardware H.264 encode to 2160p HLS using QSV, Apple VideoToolbox, or CPU fallback | XL | Medium to high | High | Higher-bitrate 4K output for capable local clients |
-| Enhanced 1080p | Deinterlaces, scales, sharpens, then CPU transcodes | Large | High | None | General quality improvement for soft/interlaced channels |
-| Clean 1080p | Deinterlaces, denoises, lightly sharpens, then CPU transcodes | Large | High | None | Noisy or blocky low-bitrate channels |
+| 720p Transcode (Min) | Encodes H.264/AAC HLS with the selected backend, upscaling low-res sources to 720p without downscaling higher-res sources | Large | Low to medium | Backend-dependent | Weak clients, lower bandwidth, normalizing odd streams |
+| 1080p Transcode (Min) | Encodes H.264/AAC HLS with the selected backend, upscaling low-res sources to 1080p without downscaling 4K sources | Large | Medium | Backend-dependent | Client compatibility at higher resolution |
+| 4K Transcode | Encodes 2160p H.264/AAC HLS with the selected backend | XL | Medium to high | High | Higher-bitrate 4K output for capable local clients |
+| Enhanced 1080p | Deinterlaces, scales, sharpens, then encodes with the selected backend | Large | High | Backend-dependent | General quality improvement for soft/interlaced channels |
+| Clean 1080p | Deinterlaces, denoises, lightly sharpens, then encodes with the selected backend | Large | High | Backend-dependent | Noisy or blocky low-bitrate channels |
 | Deinterlace 720p60 | Converts interlaced field motion to 60 fps output at 720p | XL | High | Low to medium | True interlaced sports/news feeds where field-rate motion matters |
 | Deinterlace 1080p60 | Heavy field-rate deinterlace for true 1080i feeds | XL | Very high | Medium to high | Only for stable high-bitrate 1080i feeds on capable servers |
 | Sports 720p60 | Field-rate deinterlaces to 720p60 with sharpening and hardware detail/denoise where supported | XL | High | Medium | Sports channels on QSV/VAAPI systems |
-| Hardware Sports 720p60 | Hardware deinterlaces and encodes 720p60 with QSV detail/denoise where supported | XL | Medium | Medium | Best first try for sports on Intel QSV systems |
 
-On the Xeon E3-1245 v6 / Intel HD Graphics P630, start with Stable HLS, Hardware 720p, Enhanced 1080p, and Sports 720p60 for sports. Treat Hardware 4K and Deinterlace 1080p60 as experimental because they can be bandwidth-heavy or CPU-heavy depending on the stream.
+On the Xeon E3-1245 v6 / Intel HD Graphics P630, start with Stable HLS, 720p Transcode, Enhanced 1080p, and Sports 720p60 for sports. Treat 4K Transcode and Deinterlace 1080p60 as experimental because they can be bandwidth-heavy or CPU-heavy depending on the stream.
 
 The buffer setting controls the steady-state playback buffer, not a long startup wait. The player starts close to the live edge and then fills the selected buffer size in the background. Server-generated HLS uses short 2-second segments to reduce channel-change delay while still allowing larger buffers for unstable or CPU-heavy profiles.
 
-Audio processing is separate from the video profile. Standard AAC re-encodes audio for compatibility with a light normalization pass while preserving the source channel layout. Surround 5.1 applies stronger dynamic normalization and a conservative stereo-to-5.1 upmix. Aggressive 5.1 pushes stereo harder into a 5.1 field using FFmpeg's `surround` filter; use it only when you want that processed sound.
+Audio processing is separate from the video profile. None re-encodes audio to AAC for compatibility without volume normalization or upmixing. Standard AAC adds a light normalization pass while preserving the source channel layout. Surround 5.1 applies stronger dynamic normalization and a conservative stereo-to-5.1 upmix. Aggressive 5.1 pushes stereo harder into a 5.1 field using FFmpeg's `surround` filter; use it only when you want that processed sound.
 
 ## Data storage
 
@@ -126,13 +123,13 @@ Runs on [http://localhost:3000](http://localhost:3000). Data is stored in `./dat
 | `TRANSCODE_RECOMMENDED_BACKEND` | set at runtime | App-populated recommendation from short FFmpeg hardware encode probes |
 | `TRANSCODE_RECOMMENDED_ENCODER` | set at runtime | FFmpeg encoder selected by the runtime probe, such as `h264_vaapi`, `h264_qsv`, `h264_amf`, `h264_videotoolbox`, or `libx264` |
 | `TRANSCODE_THREADS` | `0` | FFmpeg thread count for transcode/filter work. `0` lets FFmpeg auto-size; set a number to cap CPU use |
-| `TRANSCODE_TEST_AUDIO_PROFILE` | `standard` | Audio profile used by the transcode smoke test: `standard`, `surround_5_1`, or `surround_5_1_aggressive` |
+| `TRANSCODE_TEST_AUDIO_PROFILE` | `none` | Audio profile used by the transcode smoke test: `none`, `standard`, `surround_5_1`, or `surround_5_1_aggressive` |
 | `CHANNELER_RUN_QSV_CHECK` | `false` | Force the Docker startup QSV diagnostic even when `/dev/dri` is not detected |
 | `CHANNELER_SKIP_CONTAINER_CHECKS` | `false` | Skip Docker startup diagnostics |
 
 ### Transcode backends
 
-Each playlist can choose a Hardware Backend in settings. `TRANSCODE_BACKEND` is only the server default behind Auto. These backend choices only affect Hardware playback profiles. CPU-only profiles such as Enhanced and Clean still use FFmpeg software filters and `libx264`.
+Each playlist can choose a Hardware Backend in settings. `TRANSCODE_BACKEND` is only the server default behind Auto. These backend choices affect playback profiles that encode H.264. Some profiles still use software filters before handing frames to the selected encoder, and the server falls back to CPU encoding when the selected hardware backend is unavailable.
 
 | Backend | What it uses | Best for | Notes |
 |---|---|---|---|
@@ -178,6 +175,7 @@ npm run test:playback -- --backend=videotoolbox --report-dir=test-results/playba
 For audio-profile changes, run at least:
 
 ```bash
+npm run test:playback -- --audio-profile=none
 npm run test:playback -- --audio-profile=standard
 npm run test:playback -- --audio-profile=surround_5_1
 npm run test:playback -- --audio-profile=surround_5_1_aggressive
@@ -204,8 +202,8 @@ Useful options:
 | Option / env var | Example | Description |
 |---|---|---|
 | `--backends=` / `TRANSCODE_TEST_BACKENDS` | `qsv,videotoolbox,cpu` | Limit hardware backend combinations |
-| `--profiles=` / `TRANSCODE_TEST_PROFILES` | `qsv_720p,hardware_smooth_720p60` | Limit playback profiles |
-| `--audio-profile=` / `TRANSCODE_TEST_AUDIO_PROFILE` | `surround_5_1_aggressive` | Test standard AAC or either 5.1 audio processing mode |
+| `--profiles=` / `TRANSCODE_TEST_PROFILES` | `transcode_720p,smooth_720p60` | Limit playback profiles |
+| `--audio-profile=` / `TRANSCODE_TEST_AUDIO_PROFILE` | `surround_5_1_aggressive` | Test no processing, light normalization, or either 5.1 audio processing mode |
 | `--keep-output` | | Keep generated HLS files under `/tmp` for inspection |
 | `FFMPEG_PATH` | `/usr/local/bin/ffmpeg` | Test a specific FFmpeg binary |
 | `TRANSCODE_TEST_DURATION` | `8` | Number of seconds of synthetic media per test |
@@ -227,7 +225,7 @@ Useful options:
 |---|---|---|
 | `--profiles=` / `PLAYBACK_TEST_PROFILES` | `transcode_720p,sports_720p60` | Limit playback profiles |
 | `--backend=` / `PLAYBACK_TEST_BACKEND` | `videotoolbox` | Test a specific backend. Defaults to `cpu` |
-| `--audio-profile=` / `PLAYBACK_TEST_AUDIO_PROFILE` | `surround_5_1_aggressive` | Test standard AAC or either 5.1 mode |
+| `--audio-profile=` / `PLAYBACK_TEST_AUDIO_PROFILE` | `surround_5_1_aggressive` | Test no processing, light normalization, or either 5.1 mode |
 | `--all` | | Include heavier profiles such as 4K and 1080p60 |
 | `--headed` | | Show the browser while testing |
 | `--keep-output` | | Keep temp DB, HLS cache, and artifacts |
