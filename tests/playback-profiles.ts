@@ -259,7 +259,7 @@ async function runProfile(args: {
       video.muted = true
       await video.play().catch(() => {})
     })
-    await page.waitForTimeout(2000)
+    await page.waitForTimeout(5000)
     const screenshotDir = path.join(args.reportDir, 'screenshots')
     fs.mkdirSync(screenshotDir, { recursive: true })
     screenshotPath = path.join(screenshotDir, `${args.profile}.png`)

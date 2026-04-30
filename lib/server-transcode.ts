@@ -244,9 +244,11 @@ function emptyDirectory(dir: string) {
   fs.mkdirSync(dir, { recursive: true })
 }
 
-function inputArgs(sourceUrl: string) {
+function inputArgs(sourceUrl: string, backend?: HardwareBackend) {
   return [
-    ...(process.env.TRANSCODE_REALTIME_INPUT === 'true' ? ['-re'] : []),
+    ...(backend === 'videotoolbox' ? ['-hwaccel', 'videotoolbox'] : []),
+    '-probesize', '1M',
+    '-analyzeduration', '1000000',
     '-reconnect', '1',
     '-reconnect_streamed', '1',
     '-reconnect_on_network_error', '1',
@@ -264,7 +266,7 @@ function ffmpegArgs(sourceUrl: string, outputDir: string, profile: PlaybackProfi
     ...(backend === 'vaapi' ? vaapiDeviceArgs() : []),
     ...(backend === 'qsv' ? qsvDeviceArgs() : []),
     ...threadingArgs(),
-    ...inputArgs(sourceUrl),
+    ...inputArgs(sourceUrl, backend),
     ...profileArgs(profile, backend, { audioProfile }),
     ...hlsArgs(outputDir),
   ]
