@@ -24,16 +24,16 @@ type EncodingBudget = {
 
 const ENCODING_BUDGETS = {
   stableHlsAudio: { audioBitrate: '192k', enhancedAudioBitrate: '384k' },
-  transcode720p: { videoBitrate: '3500k', maxrate: '4200k', bufsize: '7000k', audioBitrate: '192k', enhancedAudioBitrate: '384k' },
-  transcode1080p: { videoBitrate: '6000k', maxrate: '7200k', bufsize: '12000k', audioBitrate: '192k', enhancedAudioBitrate: '512k' },
-  transcode4k: { videoBitrate: '22000k', maxrate: '28000k', bufsize: '44000k', audioBitrate: '256k', enhancedAudioBitrate: '640k' },
-  enhanced1080p: { videoBitrate: '6500k', maxrate: '8000k', bufsize: '13000k', audioBitrate: '192k', enhancedAudioBitrate: '512k' },
-  clean1080p: { videoBitrate: '6000k', maxrate: '7500k', bufsize: '12000k', audioBitrate: '192k', enhancedAudioBitrate: '512k' },
-  smooth720p60Hardware: { videoBitrate: '5000k', maxrate: '6000k', bufsize: '10000k', audioBitrate: '192k', enhancedAudioBitrate: '384k' },
-  smooth720p60Software: { videoBitrate: '4500k', maxrate: '5500k', bufsize: '9000k', audioBitrate: '192k', enhancedAudioBitrate: '384k' },
-  smooth1080p60Hardware: { videoBitrate: '8500k', maxrate: '10000k', bufsize: '17000k', audioBitrate: '192k', enhancedAudioBitrate: '512k' },
-  smooth1080p60Software: { videoBitrate: '7500k', maxrate: '9000k', bufsize: '15000k', audioBitrate: '192k', enhancedAudioBitrate: '512k' },
-  sports720p60: { videoBitrate: '5500k', maxrate: '7000k', bufsize: '11000k', audioBitrate: '192k', enhancedAudioBitrate: '384k' },
+  transcode720p: { videoBitrate: '3500k', maxrate: '3500k', bufsize: '7000k', audioBitrate: '192k', enhancedAudioBitrate: '384k' },
+  transcode1080p: { videoBitrate: '6000k', maxrate: '6000k', bufsize: '12000k', audioBitrate: '192k', enhancedAudioBitrate: '512k' },
+  transcode4k: { videoBitrate: '20000k', maxrate: '20000k', bufsize: '40000k', audioBitrate: '256k', enhancedAudioBitrate: '640k' },
+  enhanced1080p: { videoBitrate: '6500k', maxrate: '6500k', bufsize: '13000k', audioBitrate: '192k', enhancedAudioBitrate: '512k' },
+  clean1080p: { videoBitrate: '6000k', maxrate: '6000k', bufsize: '12000k', audioBitrate: '192k', enhancedAudioBitrate: '512k' },
+  smooth720p60Hardware: { videoBitrate: '5000k', maxrate: '5000k', bufsize: '10000k', audioBitrate: '192k', enhancedAudioBitrate: '384k' },
+  smooth720p60Software: { videoBitrate: '4500k', maxrate: '4500k', bufsize: '9000k', audioBitrate: '192k', enhancedAudioBitrate: '384k' },
+  smooth1080p60Hardware: { videoBitrate: '8500k', maxrate: '8500k', bufsize: '17000k', audioBitrate: '192k', enhancedAudioBitrate: '512k' },
+  smooth1080p60Software: { videoBitrate: '7500k', maxrate: '7500k', bufsize: '15000k', audioBitrate: '192k', enhancedAudioBitrate: '512k' },
+  sports720p60: { videoBitrate: '5500k', maxrate: '5500k', bufsize: '11000k', audioBitrate: '192k', enhancedAudioBitrate: '384k' },
 } as const
 
 const FPS = {
@@ -138,7 +138,7 @@ export function hlsArgs(outputDir: string, segmentTime = 2) {
     '-f', 'hls',
     '-hls_time', String(segmentTime),
     '-hls_list_size', '10',
-    '-hls_flags', 'delete_segments+independent_segments+omit_endlist+program_date_time+temp_file',
+    '-hls_flags', 'delete_segments+independent_segments+omit_endlist+program_date_time+temp_file+discont_start',
     '-hls_segment_filename', path.join(outputDir, 'segment_%06d.ts'),
     path.join(outputDir, 'index.m3u8'),
   ]
@@ -180,6 +180,7 @@ function hardwareH264Args(
       '-c:v', encoderForBackend(backend),
       ...h264HlsCompatibilityArgs(),
       ...forcedKeyFrameArgs(),
+      '-sc_threshold', '0',
       '-qp', height >= 2160 ? '18' : height >= 1080 ? '21' : '23',
       ...audioEncodeArgs(budget, audioProfile),
     ]
@@ -193,6 +194,7 @@ function hardwareH264Args(
       '-realtime', 'true',
       ...h264HlsCompatibilityArgs(),
       ...forcedKeyFrameArgs(),
+      '-sc_threshold', '0',
       ...bitrateArgs(budget.videoBitrate, budget.maxrate, budget.bufsize),
       ...audioEncodeArgs(budget, audioProfile),
     ]
@@ -206,6 +208,7 @@ function hardwareH264Args(
       '-quality', 'speed',
       ...h264HlsCompatibilityArgs(),
       ...forcedKeyFrameArgs(),
+      '-sc_threshold', '0',
       ...bitrateArgs(budget.videoBitrate, budget.maxrate, budget.bufsize),
       ...audioEncodeArgs(budget, audioProfile),
     ]
@@ -218,8 +221,11 @@ function hardwareH264Args(
       : `${maxHeightScaleFilter(height, scaleFlags)},format=nv12`,
     '-c:v', encoderForBackend(backend),
     '-preset', 'veryfast',
+    '-async_depth', '1',
+    '-bf', '0',
     ...h264HlsCompatibilityArgs(),
     ...forcedKeyFrameArgs(),
+    '-sc_threshold', '0',
     ...bitrateArgs(budget.videoBitrate, budget.maxrate, budget.bufsize),
     ...audioEncodeArgs(budget, audioProfile),
   ]
@@ -257,6 +263,7 @@ function hardwareFilteredH264Args(
       ...h264HlsCompatibilityArgs(),
       ...fpsArgs(fps),
       ...forcedKeyFrameArgs(),
+      '-sc_threshold', '0',
       '-qp', '23',
       ...audioEncodeArgs(budget, audioProfile),
     ]
@@ -267,9 +274,11 @@ function hardwareFilteredH264Args(
       ...streamMapArgs(streamMap),
       '-vf', videoToolboxFilter(filter),
       '-c:v', encoderForBackend(backend),
+      '-realtime', 'true',
       ...h264HlsCompatibilityArgs(),
       ...fpsArgs(fps),
       ...forcedKeyFrameArgs(),
+      '-sc_threshold', '0',
       ...bitrateArgs(budget.videoBitrate, budget.maxrate, budget.bufsize),
       ...audioEncodeArgs(budget, audioProfile),
     ]
@@ -279,10 +288,11 @@ function hardwareFilteredH264Args(
     ...streamMapArgs(streamMap),
     '-vf', filter.includes('format=nv12') ? filter : `${filter},format=nv12`,
     '-c:v', encoderForBackend(backend),
-    ...(backend === 'qsv' ? ['-preset', 'veryfast'] : ['-quality', 'speed']),
+    ...(backend === 'qsv' ? ['-preset', 'veryfast', '-async_depth', '1', '-bf', '0'] : ['-quality', 'speed']),
     ...h264HlsCompatibilityArgs(),
     ...fpsArgs(fps),
     ...forcedKeyFrameArgs(),
+    '-sc_threshold', '0',
     ...bitrateArgs(budget.videoBitrate, budget.maxrate, budget.bufsize),
     ...audioEncodeArgs(budget, audioProfile),
   ]

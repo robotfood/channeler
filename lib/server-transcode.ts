@@ -246,6 +246,10 @@ function emptyDirectory(dir: string) {
 
 function inputArgs(sourceUrl: string, backend?: HardwareBackend) {
   return [
+    '-hide_banner',
+    '-loglevel', 'warning',
+    '-fflags', 'nobuffer',
+    '-flags', 'low_delay',
     ...(backend === 'videotoolbox' ? ['-hwaccel', 'videotoolbox'] : []),
     '-probesize', '1M',
     '-analyzeduration', '1000000',
@@ -259,8 +263,6 @@ function inputArgs(sourceUrl: string, backend?: HardwareBackend) {
 
 function ffmpegArgs(sourceUrl: string, outputDir: string, profile: PlaybackProfile, backend: Exclude<HardwareBackend, 'auto'>, audioProfile: AudioProfile) {
   return [
-    '-hide_banner',
-    '-loglevel', 'warning',
     '-nostdin',
     '-fflags', '+genpts',
     ...(backend === 'vaapi' ? vaapiDeviceArgs() : []),
