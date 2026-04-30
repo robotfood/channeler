@@ -41,24 +41,30 @@ const FPS = {
   smooth: 60,
 } as const
 
+const AUDIO_FILTERS = {
+  standard: 'dynaudnorm=f=120:g=8:p=0.96',
+  surroundSafe: 'aformat=channel_layouts=stereo,dynaudnorm=f=150:g=15:p=0.9,surround=chl_out=5.1',
+  surroundAggressive: 'aformat=channel_layouts=stereo,dynaudnorm=f=150:g=15:p=0.9,surround=chl_out=5.1:focus=0.8:angle=65:smooth=0.2:level_out=1.15:lfe_mode=add:lfe_low=80:lfe_high=180',
+} as const
+
 function streamMapArgs({ videoInputIndex = 0, audioInputIndex = 0 }: StreamMap = {}) {
   return ['-map', `${videoInputIndex}:v:0?`, '-map', `${audioInputIndex}:a:0?`]
 }
 
 function audioEncodeArgs(budget: Pick<EncodingBudget, 'audioBitrate' | 'enhancedAudioBitrate'>, audioProfile: AudioProfile) {
+  const surroundAudio = audioProfile === 'surround_5_1' || audioProfile === 'surround_5_1_aggressive'
   const args = [
     '-c:a', 'aac',
-    '-b:a', audioProfile === 'enhanced_5_1' ? budget.enhancedAudioBitrate : budget.audioBitrate,
+    '-b:a', surroundAudio ? budget.enhancedAudioBitrate : budget.audioBitrate,
     '-ar', '48000',
   ]
 
-  if (audioProfile === 'enhanced_5_1') {
-    args.push(
-      '-ac', '6',
-      '-af', 'dynaudnorm=f=150:g=15:p=0.9,surround=chl_out=5.1:focus=0.8:angle=65:smooth=0.2:level_out=1.15:lfe_mode=add:lfe_low=80:lfe_high=180'
-    )
+  if (audioProfile === 'surround_5_1_aggressive') {
+    args.push('-ac', '6', '-af', AUDIO_FILTERS.surroundAggressive)
+  } else if (audioProfile === 'surround_5_1') {
+    args.push('-ac', '6', '-af', AUDIO_FILTERS.surroundSafe)
   } else {
-    args.push('-af', 'dynaudnorm=f=120:g=8:p=0.96')
+    args.push('-af', AUDIO_FILTERS.standard)
   }
 
   return args
@@ -66,6 +72,10 @@ function audioEncodeArgs(budget: Pick<EncodingBudget, 'audioBitrate' | 'enhanced
 
 function bitrateArgs(videoBitrate: string, maxrate: string, bufsize: string) {
   return ['-b:v', videoBitrate, '-maxrate', maxrate, '-bufsize', bufsize]
+}
+
+function h264HlsCompatibilityArgs() {
+  return ['-bsf:v', 'dump_extra']
 }
 
 function forcedKeyFrameArgs() {
@@ -81,10 +91,9 @@ function maxHeightScaleFilter(height: number, scaleFlags = 'lanczos') {
 }
 
 function videoToolboxFilter(filter: string) {
-  const scaled = filter.replace(/scale=[^,]+/, 'scale_vt')
   return filter.includes('yadif')
-    ? scaled.replace(/yadif=[^,]+/, 'yadif_videotoolbox=mode=send_field')
-    : scaled
+    ? filter.replace(/yadif=[^,]+/, 'yadif_videotoolbox=mode=send_field')
+    : filter
 }
 
 export function encoderForBackend(backend: TranscodeBackend) {
@@ -129,7 +138,7 @@ export function hlsArgs(outputDir: string, segmentTime = 2) {
     '-f', 'hls',
     '-hls_time', String(segmentTime),
     '-hls_list_size', '10',
-    '-hls_flags', 'delete_segments+append_list+omit_endlist+program_date_time',
+    '-hls_flags', 'delete_segments+independent_segments+omit_endlist+program_date_time',
     '-hls_segment_filename', path.join(outputDir, 'segment_%06d.ts'),
     path.join(outputDir, 'index.m3u8'),
   ]
@@ -144,6 +153,7 @@ function cpuH264Args(height: number, budget: EncodingBudget, audioProfile: Audio
     '-c:v', 'libx264',
     '-preset', 'veryfast',
     '-tune', 'zerolatency',
+    ...h264HlsCompatibilityArgs(),
     ...forcedKeyFrameArgs(),
     '-sc_threshold', '0',
     ...bitrateArgs(budget.videoBitrate, budget.maxrate, budget.bufsize),
@@ -168,6 +178,7 @@ function hardwareH264Args(
         ? `hwupload,scale_vaapi=w=-2:h=${height}:format=nv12`
         : `${maxHeightScaleFilter(height, scaleFlags)},format=nv12,hwupload`,
       '-c:v', encoderForBackend(backend),
+      ...h264HlsCompatibilityArgs(),
       ...forcedKeyFrameArgs(),
       '-qp', height >= 2160 ? '18' : height >= 1080 ? '21' : '23',
       ...audioEncodeArgs(budget, audioProfile),
@@ -177,9 +188,10 @@ function hardwareH264Args(
   if (backend === 'videotoolbox') {
     return [
       ...streamMapArgs(streamMap),
-      '-vf', `scale_vt=w=-2:h=${height}:color_matrix=bt709`,
+      '-vf', `${maxHeightScaleFilter(height, scaleFlags)},format=yuv420p`,
       '-c:v', encoderForBackend(backend),
       '-realtime', 'true',
+      ...h264HlsCompatibilityArgs(),
       ...forcedKeyFrameArgs(),
       ...bitrateArgs(budget.videoBitrate, budget.maxrate, budget.bufsize),
       ...audioEncodeArgs(budget, audioProfile),
@@ -192,6 +204,7 @@ function hardwareH264Args(
       '-vf', `${maxHeightScaleFilter(height, scaleFlags)},format=nv12`,
       '-c:v', encoderForBackend(backend),
       '-quality', 'speed',
+      ...h264HlsCompatibilityArgs(),
       ...forcedKeyFrameArgs(),
       ...bitrateArgs(budget.videoBitrate, budget.maxrate, budget.bufsize),
       ...audioEncodeArgs(budget, audioProfile),
@@ -205,6 +218,7 @@ function hardwareH264Args(
       : `${maxHeightScaleFilter(height, scaleFlags)},format=nv12`,
     '-c:v', encoderForBackend(backend),
     '-preset', 'veryfast',
+    ...h264HlsCompatibilityArgs(),
     ...forcedKeyFrameArgs(),
     ...bitrateArgs(budget.videoBitrate, budget.maxrate, budget.bufsize),
     ...audioEncodeArgs(budget, audioProfile),
@@ -226,6 +240,7 @@ function hardwareFilteredH264Args(
       '-c:v', 'libx264',
       '-preset', 'ultrafast',
       '-tune', 'zerolatency',
+      ...h264HlsCompatibilityArgs(),
       ...fpsArgs(fps),
       ...forcedKeyFrameArgs(),
       '-sc_threshold', '0',
@@ -239,6 +254,7 @@ function hardwareFilteredH264Args(
       ...streamMapArgs(streamMap),
       '-vf', filter.includes('hwupload') ? filter : `${filter},format=nv12,hwupload`,
       '-c:v', encoderForBackend(backend),
+      ...h264HlsCompatibilityArgs(),
       ...fpsArgs(fps),
       ...forcedKeyFrameArgs(),
       '-qp', '23',
@@ -251,6 +267,7 @@ function hardwareFilteredH264Args(
       ...streamMapArgs(streamMap),
       '-vf', videoToolboxFilter(filter),
       '-c:v', encoderForBackend(backend),
+      ...h264HlsCompatibilityArgs(),
       ...fpsArgs(fps),
       ...forcedKeyFrameArgs(),
       ...bitrateArgs(budget.videoBitrate, budget.maxrate, budget.bufsize),
@@ -263,6 +280,7 @@ function hardwareFilteredH264Args(
     '-vf', filter.includes('format=nv12') ? filter : `${filter},format=nv12`,
     '-c:v', encoderForBackend(backend),
     ...(backend === 'qsv' ? ['-preset', 'veryfast'] : ['-quality', 'speed']),
+    ...h264HlsCompatibilityArgs(),
     ...fpsArgs(fps),
     ...forcedKeyFrameArgs(),
     ...bitrateArgs(budget.videoBitrate, budget.maxrate, budget.bufsize),

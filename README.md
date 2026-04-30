@@ -76,7 +76,7 @@ On the Xeon E3-1245 v6 / Intel HD Graphics P630, start with Stable HLS, Hardware
 
 The buffer setting controls the steady-state playback buffer, not a long startup wait. The player starts close to the live edge and then fills the selected buffer size in the background. Server-generated HLS uses short 2-second segments to reduce channel-change delay while still allowing larger buffers for unstable or CPU-heavy profiles.
 
-Audio processing is separate from the video profile. Standard AAC re-encodes audio for compatibility with a light normalization pass while preserving the source channel layout. Enhanced 5.1 applies stronger dynamic normalization and a more aggressive surround upmix using FFmpeg's `surround` filter; it pushes stereo harder into a 5.1 field and is best used only when you want that processed sound.
+Audio processing is separate from the video profile. Standard AAC re-encodes audio for compatibility with a light normalization pass while preserving the source channel layout. Surround 5.1 applies stronger dynamic normalization and a conservative stereo-to-5.1 upmix. Aggressive 5.1 pushes stereo harder into a 5.1 field using FFmpeg's `surround` filter; use it only when you want that processed sound.
 
 ## Data storage
 
@@ -126,7 +126,7 @@ Runs on [http://localhost:3000](http://localhost:3000). Data is stored in `./dat
 | `TRANSCODE_RECOMMENDED_BACKEND` | set at runtime | App-populated recommendation from short FFmpeg hardware encode probes |
 | `TRANSCODE_RECOMMENDED_ENCODER` | set at runtime | FFmpeg encoder selected by the runtime probe, such as `h264_vaapi`, `h264_qsv`, `h264_amf`, `h264_videotoolbox`, or `libx264` |
 | `TRANSCODE_THREADS` | `0` | FFmpeg thread count for transcode/filter work. `0` lets FFmpeg auto-size; set a number to cap CPU use |
-| `TRANSCODE_TEST_AUDIO_PROFILE` | `standard` | Audio profile used by the transcode smoke test: `standard` or `enhanced_5_1` |
+| `TRANSCODE_TEST_AUDIO_PROFILE` | `standard` | Audio profile used by the transcode smoke test: `standard`, `surround_5_1`, or `surround_5_1_aggressive` |
 | `CHANNELER_RUN_QSV_CHECK` | `false` | Force the Docker startup QSV diagnostic even when `/dev/dri` is not detected |
 | `CHANNELER_SKIP_CONTAINER_CHECKS` | `false` | Skip Docker startup diagnostics |
 
@@ -142,6 +142,48 @@ Each playlist can choose a Hardware Backend in settings. `TRANSCODE_BACKEND` is 
 | `amf` | AMD AMF via FFmpeg `h264_amf` | Hosts with supported AMD GPU encode access | Requires an FFmpeg build with AMF plus the host GPU/runtime exposed to the app |
 | `videotoolbox` | Apple VideoToolbox via FFmpeg `h264_videotoolbox` | macOS hosts and Apple Silicon | This is the practical Apple hardware encoder path; it is not exposed as a separate Metal encoder in FFmpeg |
 | `cpu` | FFmpeg `libx264` software encoding | Debugging or hosts without hardware encoder access | Most compatible, but highest CPU usage |
+
+## Integration tests
+
+Use these tests when changing stream proxying, FFmpeg args, playback profiles, audio profiles, or provider import code. They are intentionally separate because they catch different failures:
+
+| Test | Command | What it proves |
+|---|---|---|
+| FFmpeg transcode smoke | `npm run test:transcode` | FFmpeg can generate HLS files for the configured profiles/backends |
+| Browser playback E2E | `npm run test:playback` | Chromium + hls.js can actually play the generated stream |
+| Xtream import integration | `npm run test:xtream` | A real Xtream provider can be imported into a temp database |
+
+Recommended local media-profile pass:
+
+```bash
+npm run test:transcode
+npm run test:playback -- --report-dir=test-results/playback-e2e-latest
+```
+
+Recommended hardware/backend pass on a target machine:
+
+```bash
+npm run test:transcode -- --backends=vaapi,qsv,cpu
+npm run test:playback -- --backend=vaapi --report-dir=test-results/playback-vaapi
+npm run test:playback -- --backend=qsv --report-dir=test-results/playback-qsv
+```
+
+On macOS, use `videotoolbox` instead:
+
+```bash
+npm run test:transcode -- --backends=videotoolbox,cpu
+npm run test:playback -- --backend=videotoolbox --report-dir=test-results/playback-videotoolbox
+```
+
+For audio-profile changes, run at least:
+
+```bash
+npm run test:playback -- --audio-profile=standard
+npm run test:playback -- --audio-profile=surround_5_1
+npm run test:playback -- --audio-profile=surround_5_1_aggressive
+```
+
+Use `-- --all` on the transcode or playback tests to include heavier profiles such as 4K and 1080p60. Browser playback tests need outbound access to `https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8` and local loopback ports for the temporary Next app.
 
 ### Transcode profile smoke test
 
@@ -163,11 +205,34 @@ Useful options:
 |---|---|---|
 | `--backends=` / `TRANSCODE_TEST_BACKENDS` | `qsv,videotoolbox,cpu` | Limit hardware backend combinations |
 | `--profiles=` / `TRANSCODE_TEST_PROFILES` | `qsv_720p,hardware_smooth_720p60` | Limit playback profiles |
-| `--audio-profile=` / `TRANSCODE_TEST_AUDIO_PROFILE` | `enhanced_5_1` | Test standard AAC or enhanced 5.1 audio processing |
+| `--audio-profile=` / `TRANSCODE_TEST_AUDIO_PROFILE` | `surround_5_1_aggressive` | Test standard AAC or either 5.1 audio processing mode |
 | `--keep-output` | | Keep generated HLS files under `/tmp` for inspection |
 | `FFMPEG_PATH` | `/usr/local/bin/ffmpeg` | Test a specific FFmpeg binary |
 | `TRANSCODE_TEST_DURATION` | `8` | Number of seconds of synthetic media per test |
 | `TRANSCODE_TEST_TIMEOUT_MS` | `120000` | Per-profile FFmpeg timeout |
+
+### Browser playback profile test
+
+Run the browser playback test when FFmpeg can generate files but the web player may still fail:
+
+```bash
+npm run test:playback
+```
+
+The test creates a temporary playlist database, points its test channel at `https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8`, starts the app on a random localhost port, opens Chromium with Playwright, clicks the test channel, and verifies that hls.js reaches real playback for each profile. It captures a screenshot two seconds after invoking video playback and writes an HTML report under `test-results/`. On failure it also keeps browser console logs, network failures, current manifests, transcode status, and latest-segment `ffprobe` output under the printed temp directory.
+
+Useful options:
+
+| Option / env var | Example | Description |
+|---|---|---|
+| `--profiles=` / `PLAYBACK_TEST_PROFILES` | `transcode_720p,sports_720p60` | Limit playback profiles |
+| `--backend=` / `PLAYBACK_TEST_BACKEND` | `videotoolbox` | Test a specific backend. Defaults to `cpu` |
+| `--audio-profile=` / `PLAYBACK_TEST_AUDIO_PROFILE` | `surround_5_1_aggressive` | Test standard AAC or either 5.1 mode |
+| `--all` | | Include heavier profiles such as 4K and 1080p60 |
+| `--headed` | | Show the browser while testing |
+| `--keep-output` | | Keep temp DB, HLS cache, and artifacts |
+| `--report-dir=` | `test-results/playback-e2e-...` | Write screenshots and `index.html` to a specific report directory |
+| `PLAYBACK_TEST_TIMEOUT_MS` | `60000` | Per-profile browser assertion timeout |
 
 ## Xtream Integration Test
 

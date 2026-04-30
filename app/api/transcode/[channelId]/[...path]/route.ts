@@ -6,7 +6,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { eq } from 'drizzle-orm'
 import { db } from '@/lib/db'
 import { channels, playlists } from '@/lib/schema'
-import { ensureTranscodeSession, getTranscodeFilePath } from '@/lib/server-transcode'
+import { ensureTranscodeSession, getTranscodeSessionFilePath } from '@/lib/server-transcode'
 import { usesTranscodedHls } from '@/lib/playback-profile'
 
 const CONTENT_TYPES: Record<string, string> = {
@@ -57,7 +57,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ cha
 
   try {
     const session = await ensureTranscodeSession(channel, playlist)
-    const filePath = getTranscodeFilePath(channel.id, playlist.playbackProfile, playlist.transcodeBackend, playlist.audioProfile, path)
+    const filePath = getTranscodeSessionFilePath(session, path)
     const data = await readFileWithSegmentWait(filePath, () => session.process.exitCode === null)
     return new NextResponse(data, {
       headers: {

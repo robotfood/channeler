@@ -385,6 +385,7 @@ export default function ChannelPlayer({ url, title, channelId, playlistId, buffe
       const hls = new Hls({
         enableWorker: true,
         lowLatencyMode: true,
+        defaultAudioCodec: 'mp4a.40.2',
         startFragPrefetch: true,
         backBufferLength: config.backBufferLength,
         maxBufferLength: config.maxBufferLength,
@@ -420,7 +421,7 @@ export default function ChannelPlayer({ url, title, channelId, playlistId, buffe
               break
             case Hls.ErrorTypes.MEDIA_ERROR:
               if (String(data.details ?? '').toLowerCase().includes('bufferappend')) {
-                setError('Playback buffer is catching up...')
+                setError(`Playback append error: ${data.details}`)
                 hls.startLoad()
                 break
               }
@@ -589,7 +590,7 @@ export default function ChannelPlayer({ url, title, channelId, playlistId, buffe
             <p className="mt-1 text-xs text-gray-500">Change the playback profile or reopen the channel to start a new session.</p>
           </div>
         ) : error ? (
-          <div className="p-6 text-center text-red-400">
+          <div data-testid="player-error" className="p-6 text-center text-red-400">
             <svg className="w-12 h-12 mx-auto mb-4 opacity-50" fill="none" viewBox="0 0 24 24" stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
             </svg>
@@ -598,6 +599,7 @@ export default function ChannelPlayer({ url, title, channelId, playlistId, buffe
           </div>
         ) : (
           <video
+            data-testid="channel-video"
             ref={videoRef}
             className="w-full h-full object-contain"
             controls

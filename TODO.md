@@ -33,3 +33,10 @@ Set up a GitHub Actions workflow that triggers on push to `main`:
 - [ ] Add hardware-accelerated VAAPI transcode mode and host capability checks
 - [ ] Add transcode session dashboard with current process/client health
 - [ ] Evaluate `node-av` for future in-process media pipelines or managed FFmpeg binary access; keep current child-process FFmpeg path unless it clearly reduces deployment/runtime risk
+
+## Video filters
+
+- [ ] Replace software `yadif` fallbacks with `bwdif` in deinterlace profiles after validating output and performance
+- [ ] Add a deband/deblock-oriented profile or toggle for noisy, blocky feeds
+- [ ] Add `idet`-based interlace detection/telemetry and avoid deinterlace-heavy paths on progressive sources
+- [ ] Benchmark any scaling or filter tweaks on real feeds before changing defaults

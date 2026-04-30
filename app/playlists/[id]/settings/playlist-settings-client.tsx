@@ -130,9 +130,14 @@ const AUDIO_PROFILES = [
     detail: 'Re-encodes audio for compatibility with a light volume normalization pass while preserving the source channel layout.',
   },
   {
-    value: 'enhanced_5_1',
-    label: 'Enhanced 5.1',
-    detail: 'Applies aggressive volume normalization and attempts a stereo-to-5.1 upmix. Subjective and higher bitrate.',
+    value: 'surround_5_1',
+    label: 'Surround 5.1',
+    detail: 'Applies stronger volume normalization and a conservative stereo-to-5.1 upmix. Subjective and higher bitrate.',
+  },
+  {
+    value: 'surround_5_1_aggressive',
+    label: 'Aggressive 5.1',
+    detail: 'Pushes stereo harder into the surround field with extra focus, LFE routing, and output gain. Most processed option.',
   },
 ] as const
 

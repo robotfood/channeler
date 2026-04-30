@@ -368,16 +368,12 @@ function waitForPlaylist(session: Session) {
   })
 }
 
-export async function ensureTranscodeSession(channel: Channel, playlist: Playlist) {
-  const profile = normalizePlaybackProfile(playlist.playbackProfile)
-  const backend = resolvedHardwareBackend(playlist.transcodeBackend)
-  const audioProfile = normalizeAudioProfile(playlist.audioProfile)
+function startTranscodeSession(channel: Channel, playlist: Playlist, profile: PlaybackProfile, backend: Exclude<HardwareBackend, 'auto'>, audioProfile: AudioProfile) {
   const key = sessionKey(channel.id, profile, backend, audioProfile)
   const existing = sessions.get(key)
   if (existing && existing.process.exitCode === null) {
     existing.lastAccessedAt = Date.now()
     console.log(`[transcode] reuse channel=${channel.id} name="${channel.displayName}" profile=${profile} backend=${backend} audio=${audioProfile} pid=${existing.process.pid ?? 'unknown'}`)
-    await waitForPlaylist(existing)
     return existing
   }
 
@@ -409,7 +405,7 @@ export async function ensureTranscodeSession(channel: Channel, playlist: Playlis
 
   process.stderr.on('data', (chunk: Buffer) => {
     const message = chunk.toString().trim()
-    if (message) session.lastError = message.slice(-2000)
+    if (message) session.lastError = `${session.lastError ? `${session.lastError}\n` : ''}${message}`.slice(-4000)
   })
   process.on('exit', (code, signal) => {
     if (session.terminationTimer) {
@@ -421,18 +417,34 @@ export async function ensureTranscodeSession(channel: Channel, playlist: Playlis
     if (sessions.get(key) === session) sessions.delete(key)
   })
 
-  await waitForPlaylist(session)
   return session
 }
 
-export function getTranscodeFilePath(channelId: number, profileValue: string | null | undefined, backendValue: string | null | undefined, audioProfileValue: string | null | undefined, filePath: string[]) {
-  const profile = normalizePlaybackProfile(profileValue)
-  const backend = resolvedHardwareBackend(backendValue)
-  const audioProfile = normalizeAudioProfile(audioProfileValue)
+export async function ensureTranscodeSession(channel: Channel, playlist: Playlist) {
+  const profile = normalizePlaybackProfile(playlist.playbackProfile)
+  const audioProfile = normalizeAudioProfile(playlist.audioProfile)
+  const backend = resolvedHardwareBackend(playlist.transcodeBackend)
+  const session = startTranscodeSession(channel, playlist, profile, backend, audioProfile)
+
+  try {
+    await waitForPlaylist(session)
+    return session
+  } catch (err) {
+    if (backend === 'cpu') throw err
+
+    console.warn(`[transcode] startup failed; falling back to cpu channel=${channel.id} profile=${profile} backend=${backend} audio=${audioProfile} error=${err instanceof Error ? err.message : String(err)}`)
+    stopSession(session.key, 'startup-failed')
+    const fallback = startTranscodeSession(channel, playlist, profile, 'cpu', audioProfile)
+    await waitForPlaylist(fallback)
+    return fallback
+  }
+}
+
+export function getTranscodeSessionFilePath(session: Pick<Session, 'outputDir'>, filePath: string[]) {
   const safeParts = filePath.filter(part => part && part !== '.' && part !== '..' && !part.includes('/') && !part.includes('\\'))
   const relativePath = safeParts.length > 0 ? safeParts.join(path.sep) : 'index.m3u8'
-  const fullPath = path.join(transcodeRoot(), String(channelId), profile, backend, audioProfile, relativePath)
-  const root = path.join(transcodeRoot(), String(channelId), profile, backend, audioProfile)
+  const root = session.outputDir
+  const fullPath = path.join(root, relativePath)
   if (fullPath !== root && !fullPath.startsWith(`${root}${path.sep}`)) throw new Error('Invalid transcode path')
   return fullPath
 }

@@ -8,7 +8,8 @@ const nextConfig: NextConfig = {
   output: 'standalone',
   outputFileTracingRoot: configDir,
   outputFileTracingExcludes: {
-    '/*': ['data/**/*'],
+    '/*': ['./data/**/*'],
+    '/api/**/*': ['./data/**/*'],
   },
   serverExternalPackages: ['better-sqlite3'],
   allowedDevOrigins: ['192.168.50.196'],
