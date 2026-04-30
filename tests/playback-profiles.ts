@@ -145,7 +145,6 @@ function startApp(dataPath: string, port: number, backend: string) {
       ...process.env,
       DATA_PATH: dataPath,
       TRANSCODE_BACKEND: backend,
-      TRANSCODE_REALTIME_INPUT: 'true',
       CHANNELER_SKIP_CONTAINER_CHECKS: 'true',
     },
     stdio: ['ignore', 'pipe', 'pipe'],

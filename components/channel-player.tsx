@@ -65,10 +65,10 @@ const BUFFER_CONFIGS: Record<string, {
   liveSyncDurationCount: number
   liveMaxLatencyDurationCount: number
 }> = {
-  small:  { backBufferLength: 15,  maxBufferLength: 30,  maxMaxBufferLength: 60,  liveSyncDurationCount: 1, liveMaxLatencyDurationCount: 3 },
-  medium: { backBufferLength: 30,  maxBufferLength: 60,  maxMaxBufferLength: 120, liveSyncDurationCount: 1, liveMaxLatencyDurationCount: 4 },
-  large:  { backBufferLength: 60,  maxBufferLength: 120, maxMaxBufferLength: 240, liveSyncDurationCount: 2, liveMaxLatencyDurationCount: 5 },
-  xl:     { backBufferLength: 120, maxBufferLength: 240, maxMaxBufferLength: 600, liveSyncDurationCount: 2, liveMaxLatencyDurationCount: 6 },
+  small:  { backBufferLength: 15,  maxBufferLength: 30,  maxMaxBufferLength: 60,  liveSyncDurationCount: 3, liveMaxLatencyDurationCount: 5 },
+  medium: { backBufferLength: 30,  maxBufferLength: 60,  maxMaxBufferLength: 120, liveSyncDurationCount: 3, liveMaxLatencyDurationCount: 6 },
+  large:  { backBufferLength: 60,  maxBufferLength: 120, maxMaxBufferLength: 240, liveSyncDurationCount: 4, liveMaxLatencyDurationCount: 8 },
+  xl:     { backBufferLength: 120, maxBufferLength: 240, maxMaxBufferLength: 600, liveSyncDurationCount: 5, liveMaxLatencyDurationCount: 10 },
 }
 
 const PLAYBACK_PROFILE_LABELS: Record<string, string> = {
@@ -384,13 +384,13 @@ export default function ChannelPlayer({ url, title, channelId, playlistId, buffe
     if (Hls.isSupported()) {
       const hls = new Hls({
         enableWorker: true,
-        lowLatencyMode: true,
+        lowLatencyMode: false,
         defaultAudioCodec: 'mp4a.40.2',
         startFragPrefetch: true,
         backBufferLength: config.backBufferLength,
         maxBufferLength: config.maxBufferLength,
         maxMaxBufferLength: config.maxMaxBufferLength,
-        maxBufferHole: 0.5,
+        maxBufferHole: 2,
         liveSyncDurationCount: config.liveSyncDurationCount,
         liveMaxLatencyDurationCount: config.liveMaxLatencyDurationCount,
         manifestLoadingMaxRetry: 10,

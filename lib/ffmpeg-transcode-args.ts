@@ -86,7 +86,7 @@ function fpsArgs(fps?: number) {
   return fps ? ['-r', String(fps), '-g', String(fps * 2), '-keyint_min', String(fps * 2)] : []
 }
 
-function maxHeightScaleFilter(height: number, scaleFlags = 'lanczos') {
+function maxHeightScaleFilter(height: number, scaleFlags = 'bicubic') {
   return `scale=-2:'max(ih\\,${height})':flags=${scaleFlags}`
 }
 
@@ -138,7 +138,7 @@ export function hlsArgs(outputDir: string, segmentTime = 2) {
     '-f', 'hls',
     '-hls_time', String(segmentTime),
     '-hls_list_size', '10',
-    '-hls_flags', 'delete_segments+independent_segments+omit_endlist+program_date_time',
+    '-hls_flags', 'delete_segments+independent_segments+omit_endlist+program_date_time+temp_file',
     '-hls_segment_filename', path.join(outputDir, 'segment_%06d.ts'),
     path.join(outputDir, 'index.m3u8'),
   ]
@@ -300,15 +300,15 @@ export function profileArgs(profile: string, backend: TranscodeBackend, options:
         ...audioEncodeArgs(ENCODING_BUDGETS.stableHlsAudio, audioProfile),
       ]
     case 'transcode_720p':
-      return hardwareH264Args(backend, 720, ENCODING_BUDGETS.transcode720p, audioProfile, 'lanczos', streamMap)
+      return hardwareH264Args(backend, 720, ENCODING_BUDGETS.transcode720p, audioProfile, 'bicubic', streamMap)
     case 'transcode_1080p':
-      return hardwareH264Args(backend, 1080, ENCODING_BUDGETS.transcode1080p, audioProfile, 'lanczos', streamMap)
+      return hardwareH264Args(backend, 1080, ENCODING_BUDGETS.transcode1080p, audioProfile, 'bicubic', streamMap)
     case 'transcode_4k':
-      return hardwareH264Args(backend, 2160, ENCODING_BUDGETS.transcode4k, audioProfile, 'lanczos', streamMap)
+      return hardwareH264Args(backend, 2160, ENCODING_BUDGETS.transcode4k, audioProfile, 'bicubic', streamMap)
     case 'enhanced_1080p':
       return hardwareFilteredH264Args(
         backend,
-        'yadif=mode=0:parity=auto:deint=interlaced,scale=-2:\'max(ih\\,1080)\':flags=lanczos,unsharp=5:5:0.45:3:3:0.25',
+        'yadif=mode=0:parity=auto:deint=interlaced,scale=-2:\'max(ih\\,1080)\':flags=bicubic,unsharp=5:5:0.45:3:3:0.25',
         ENCODING_BUDGETS.enhanced1080p,
         audioProfile,
         FPS.broadcast,
@@ -317,7 +317,7 @@ export function profileArgs(profile: string, backend: TranscodeBackend, options:
     case 'clean_1080p':
       return hardwareFilteredH264Args(
         backend,
-        'yadif=mode=0:parity=auto:deint=interlaced,hqdn3d=1.5:1.5:4:4,scale=-2:\'max(ih\\,1080)\':flags=lanczos,unsharp=3:3:0.25:3:3:0.12',
+        'yadif=mode=0:parity=auto:deint=interlaced,hqdn3d=1.5:1.5:4:4,scale=-2:\'max(ih\\,1080)\':flags=bicubic,unsharp=3:3:0.25:3:3:0.12',
         ENCODING_BUDGETS.clean1080p,
         audioProfile,
         FPS.broadcast,
@@ -326,15 +326,15 @@ export function profileArgs(profile: string, backend: TranscodeBackend, options:
     case 'smooth_720p60':
       if (backend === 'vaapi') return hardwareFilteredH264Args(backend, 'hwupload,deinterlace_vaapi,scale_vaapi=w=-2:h=720:format=nv12', ENCODING_BUDGETS.smooth720p60Hardware, audioProfile, FPS.smooth, streamMap)
       if (backend === 'qsv') return hardwareFilteredH264Args(backend, 'format=nv12,vpp_qsv=deinterlace=2:w=-2:h=720', ENCODING_BUDGETS.smooth720p60Hardware, audioProfile, FPS.smooth, streamMap)
-      return hardwareFilteredH264Args(backend, 'yadif=mode=send_field:parity=auto:deint=interlaced,scale=-2:\'max(ih\\,720)\':flags=lanczos', ENCODING_BUDGETS.smooth720p60Software, audioProfile, FPS.smooth, streamMap)
+      return hardwareFilteredH264Args(backend, 'yadif=mode=send_field:parity=auto:deint=interlaced,scale=-2:\'max(ih\\,720)\':flags=bicubic', ENCODING_BUDGETS.smooth720p60Software, audioProfile, FPS.smooth, streamMap)
     case 'smooth_1080p60':
       if (backend === 'vaapi') return hardwareFilteredH264Args(backend, 'hwupload,deinterlace_vaapi,scale_vaapi=w=-2:h=1080:format=nv12', ENCODING_BUDGETS.smooth1080p60Hardware, audioProfile, FPS.smooth, streamMap)
       if (backend === 'qsv') return hardwareFilteredH264Args(backend, 'format=nv12,vpp_qsv=deinterlace=2:w=-2:h=1080', ENCODING_BUDGETS.smooth1080p60Hardware, audioProfile, FPS.smooth, streamMap)
-      return hardwareFilteredH264Args(backend, 'yadif=mode=send_field:parity=auto:deint=interlaced,scale=-2:\'max(ih\\,1080)\':flags=lanczos', ENCODING_BUDGETS.smooth1080p60Software, audioProfile, FPS.smooth, streamMap)
+      return hardwareFilteredH264Args(backend, 'yadif=mode=send_field:parity=auto:deint=interlaced,scale=-2:\'max(ih\\,1080)\':flags=bicubic', ENCODING_BUDGETS.smooth1080p60Software, audioProfile, FPS.smooth, streamMap)
     case 'sports_720p60':
       if (backend === 'vaapi') return hardwareFilteredH264Args(backend, 'hwupload,deinterlace_vaapi,scale_vaapi=w=-2:h=720:format=nv12', ENCODING_BUDGETS.sports720p60, audioProfile, FPS.smooth, streamMap)
       if (backend === 'qsv') return hardwareFilteredH264Args(backend, 'format=nv12,vpp_qsv=deinterlace=2:w=-2:h=720:detail=50:denoise=20', ENCODING_BUDGETS.sports720p60, audioProfile, FPS.smooth, streamMap)
-      return hardwareFilteredH264Args(backend, 'yadif=mode=send_field:parity=auto:deint=interlaced,scale=-2:\'max(ih\\,720)\':flags=lanczos,unsharp=5:5:0.35:3:3:0.2', ENCODING_BUDGETS.sports720p60, audioProfile, FPS.smooth, streamMap)
+      return hardwareFilteredH264Args(backend, 'yadif=mode=send_field:parity=auto:deint=interlaced,scale=-2:\'max(ih\\,720)\':flags=bicubic,unsharp=5:5:0.35:3:3:0.2', ENCODING_BUDGETS.sports720p60, audioProfile, FPS.smooth, streamMap)
     default:
       if (options.unknownProfile === 'throw') throw new Error(`Unknown profile: ${profile}`)
       return [...streamMapArgs(streamMap), '-c', 'copy']
