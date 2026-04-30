@@ -4,7 +4,8 @@ export async function register() {
 
     const { runMigrations } = await import('./lib/migrate')
     const { reloadScheduler } = await import('./lib/scheduler')
-    const { runTranscodeHardwareProbe } = await import('./lib/server-transcode')
+    const { assertFfmpegAvailable, runTranscodeHardwareProbe } = await import('./lib/server-transcode')
+    assertFfmpegAvailable()
     runMigrations()
     runTranscodeHardwareProbe()
     await reloadScheduler()

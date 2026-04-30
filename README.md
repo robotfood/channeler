@@ -183,7 +183,7 @@ npm run test:playback -- --audio-profile=surround_5_1
 npm run test:playback -- --audio-profile=surround_5_1_aggressive
 ```
 
-Use `-- --all` on the transcode or playback tests to include heavier profiles such as 4K and 1080p60. Browser playback tests need outbound access to `https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8` and local loopback ports for the temporary Next app.
+Use `-- --all` on the transcode or playback tests to include heavier profiles such as 4K and 1080p60. Browser playback tests need outbound access to `https://skynewsau-live.akamaized.net/hls/live/2002689/skynewsau-extra1/master.m3u8` and local loopback ports for the temporary Next app.
 
 ### Transcode profile smoke test
 
@@ -219,7 +219,7 @@ Run the browser playback test when FFmpeg can generate files but the web player 
 npm run test:playback
 ```
 
-The test creates a temporary playlist database, points its test channel at `https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8`, starts the app on a random localhost port, opens Chromium with Playwright, clicks the test channel, and verifies that hls.js reaches real playback for each profile. It captures a screenshot two seconds after invoking video playback and writes an HTML report under `test-results/`. On failure it also keeps browser console logs, network failures, current manifests, transcode status, and latest-segment `ffprobe` output under the printed temp directory.
+The test creates a temporary playlist database, points its test channel at `https://skynewsau-live.akamaized.net/hls/live/2002689/skynewsau-extra1/master.m3u8`, starts the app on a random localhost port, opens Chromium with Playwright, clicks the test channel, and verifies that hls.js reaches real playback for each profile. It captures a screenshot two seconds after invoking video playback and writes an HTML report under `test-results/`. On failure it also keeps browser console logs, network failures, current manifests, transcode status, and latest-segment `ffprobe` output under the printed temp directory.
 
 Useful options:
 

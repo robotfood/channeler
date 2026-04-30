@@ -93,6 +93,24 @@ function ffmpegEncoders() {
   })
 }
 
+export function assertFfmpegAvailable() {
+  const ffmpegPath = process.env.FFMPEG_PATH || 'ffmpeg'
+
+  try {
+    execFileSync(ffmpegPath, ['-hide_banner', '-version'], {
+      encoding: 'utf8',
+      timeout: 3000,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
+  } catch (err) {
+    const message = execErrorOutput(err).trim()
+    throw new Error(
+      `FFmpeg is required but could not be started from "${ffmpegPath}". ` +
+      `Install ffmpeg or set FFMPEG_PATH to the ffmpeg binary.${message ? `\n${message}` : ''}`
+    )
+  }
+}
+
 function probeInputForBackend(backend: Exclude<HardwareBackend, 'auto' | 'cpu'>) {
   return backend === 'qsv' || backend === 'vaapi' ? 'testsrc2=size=1280x720:rate=30' : 'testsrc2=size=640x360:rate=30'
 }
@@ -228,6 +246,7 @@ function emptyDirectory(dir: string) {
 
 function inputArgs(sourceUrl: string) {
   return [
+    ...(process.env.TRANSCODE_REALTIME_INPUT === 'true' ? ['-re'] : []),
     '-reconnect', '1',
     '-reconnect_streamed', '1',
     '-reconnect_on_network_error', '1',
@@ -403,6 +422,9 @@ function startTranscodeSession(channel: Channel, playlist: Playlist, profile: Pl
   sessions.set(key, session)
   console.log(`[transcode] spawned channel=${channel.id} profile=${profile} backend=${backend} audio=${audioProfile} pid=${process.pid ?? 'unknown'}`)
 
+  process.on('error', err => {
+    session.lastError = err instanceof Error ? err.message : String(err)
+  })
   process.stderr.on('data', (chunk: Buffer) => {
     const message = chunk.toString().trim()
     if (message) session.lastError = `${session.lastError ? `${session.lastError}\n` : ''}${message}`.slice(-4000)

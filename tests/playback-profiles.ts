@@ -10,8 +10,9 @@ import { normalizePlaybackProfile } from '../lib/playback-profile'
 const FFMPEG = process.env.FFMPEG_PATH || 'ffmpeg'
 const TEST_TIMEOUT_MS = parseInt(process.env.PLAYBACK_TEST_TIMEOUT_MS || '45000', 10)
 const STARTUP_TIMEOUT_MS = parseInt(process.env.PLAYBACK_TEST_STARTUP_TIMEOUT_MS || '30000', 10)
+const PLAYBACK_OBSERVATION_MS = 10_000
 const HEAVY_PROFILES = new Set(['transcode_4k', 'smooth_1080p60'])
-const SOURCE_URL = 'https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8'
+const SOURCE_URL = 'https://skynewsau-live.akamaized.net/hls/live/2002689/skynewsau-extra1/master.m3u8'
 
 type Result = {
   profile: string
@@ -144,6 +145,7 @@ function startApp(dataPath: string, port: number, backend: string) {
       ...process.env,
       DATA_PATH: dataPath,
       TRANSCODE_BACKEND: backend,
+      TRANSCODE_REALTIME_INPUT: 'true',
       CHANNELER_SKIP_CONTAINER_CHECKS: 'true',
     },
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -270,7 +272,7 @@ async function runProfile(args: {
     }, { timeout: TEST_TIMEOUT_MS })
 
     const firstTime = await page.evaluate(() => document.querySelector('video')?.currentTime ?? 0)
-    await page.waitForTimeout(3000)
+    await page.waitForTimeout(PLAYBACK_OBSERVATION_MS)
     const stats = await page.evaluate(() => {
       const video = document.querySelector('video')
       return {
