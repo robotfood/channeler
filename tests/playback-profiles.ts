@@ -11,7 +11,7 @@ const FFMPEG = process.env.FFMPEG_PATH || 'ffmpeg'
 const TEST_TIMEOUT_MS = parseInt(process.env.PLAYBACK_TEST_TIMEOUT_MS || '45000', 10)
 const STARTUP_TIMEOUT_MS = parseInt(process.env.PLAYBACK_TEST_STARTUP_TIMEOUT_MS || '30000', 10)
 const PLAYBACK_OBSERVATION_MS = 10_000
-const HEAVY_PROFILES = new Set(['transcode_4k', 'smooth_1080p60'])
+const HEAVY_PROFILES = new Set(['smooth_1080p60'])
 const SOURCE_URL = 'https://skynewsau-live.akamaized.net/hls/live/2002689/skynewsau-extra1/master.m3u8'
 
 type Result = {
@@ -72,10 +72,8 @@ function selectedProfiles() {
         'stable_hls',
         'transcode_720p',
         'transcode_1080p',
-        'enhanced_1080p',
-        'clean_1080p',
+        'repair_1080p',
         'smooth_720p60',
-        'sports_720p60',
       ]
 
   const normalized = profiles.map(profile => {
@@ -85,7 +83,7 @@ function selectedProfiles() {
   })
 
   return hasArg('--all')
-    ? [...new Set([...normalized, 'transcode_4k', 'smooth_1080p60'])]
+    ? [...new Set([...normalized, 'smooth_1080p60'])]
     : normalized.filter(profile => !HEAVY_PROFILES.has(profile))
 }
 

@@ -3,6 +3,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { useEffect, useRef, useState } from 'react'
 import Hls from 'hls.js'
+import { normalizePlaybackProfile, type PlaybackProfile } from '@/lib/playback-profile'
 
 interface Props {
   url: string
@@ -49,14 +50,12 @@ const BACKENDS = [
 const PROFILES = [
   { value: 'proxy', label: 'Proxy Passthrough' },
   { value: 'stable_hls', label: 'Stable HLS Remux' },
-  { value: 'transcode_720p', label: '720p Transcode (Min)' },
-  { value: 'transcode_1080p', label: '1080p Transcode (Min)' },
-  { value: 'enhanced_1080p', label: 'Enhanced 1080p' },
-  { value: 'clean_1080p', label: 'Clean 1080p' },
+  { value: 'transcode_720p', label: 'Compatibility 720p' },
+  { value: 'transcode_1080p', label: 'Compatibility 1080p' },
+  { value: 'repair_1080p', label: 'Repair 1080p' },
   { value: 'smooth_720p60', label: 'Deinterlace 720p60' },
   { value: 'smooth_1080p60', label: 'Deinterlace 1080p60' },
-  { value: 'sports_720p60', label: 'Sports 720p60' },
-]
+] as const
 
 const BUFFER_CONFIGS: Record<string, {
   backBufferLength: number
@@ -75,14 +74,11 @@ const PLAYBACK_PROFILE_LABELS: Record<string, string> = {
   direct: 'Direct',
   proxy: 'Proxy passthrough',
   stable_hls: 'Stable HLS remux',
-  transcode_720p: '720p Transcode (Min)',
-  transcode_1080p: '1080p Transcode (Min)',
-  transcode_4k: '4K Transcode',
-  enhanced_1080p: 'Enhanced 1080p',
-  clean_1080p: 'Clean 1080p',
+  transcode_720p: 'Compatibility 720p',
+  transcode_1080p: 'Compatibility 1080p',
+  repair_1080p: 'Repair 1080p',
   smooth_720p60: 'Deinterlace 720p60',
   smooth_1080p60: 'Deinterlace 1080p60',
-  sports_720p60: 'Sports 720p60',
 }
 
 function playbackModeLabel(playbackProfile: string | null | undefined, proxyStreams: boolean | undefined) {
@@ -105,7 +101,7 @@ export default function ChannelPlayer({ url, title, channelId, playlistId, buffe
   const [loadingEpg, setLoadingEpg] = useState(false)
   const [isCasting, setIsCasting] = useState(false)
   const [showSettings, setShowSettings] = useState(false)
-  const [activeProfile, setActiveProfile] = useState(playbackProfile || 'proxy')
+  const [activeProfile, setActiveProfile] = useState(normalizePlaybackProfile(playbackProfile || 'proxy'))
   const [activeBackend, setActiveBackend] = useState(transcodeBackend || 'auto')
   const [streamUrl, setStreamUrl] = useState(url)
   const [playbackStats, setPlaybackStats] = useState<PlaybackStats>({ width: null, height: null, fps: null })
@@ -220,7 +216,7 @@ export default function ChannelPlayer({ url, title, channelId, playlistId, buffe
     }
   }
 
-  async function updateSettings(newProfile?: string, newBackend?: string) {
+  async function updateSettings(newProfile?: PlaybackProfile, newBackend?: string) {
     if (!playlistId) return
     
     const profile = newProfile ?? activeProfile

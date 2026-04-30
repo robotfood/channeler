@@ -60,16 +60,13 @@ Playback profiles control whether clients receive the original stream, a proxied
 | Direct source | Sends clients to the provider URL directly | Medium | None | None | Lowest latency and no server work |
 | Proxy passthrough | Proxies the original stream through Channeler | Medium | Very low | None | VPN routing, hiding provider URL, connection sharing |
 | Stable HLS remux | Uses FFmpeg to repackage into local HLS without re-encoding when possible | Large | Low | None | Better stability and client compatibility with minimal quality loss |
-| 720p Transcode (Min) | Encodes H.264/AAC HLS with the selected backend, upscaling low-res sources to 720p without downscaling higher-res sources | Large | Low to medium | Backend-dependent | Weak clients, lower bandwidth, normalizing odd streams |
-| 1080p Transcode (Min) | Encodes H.264/AAC HLS with the selected backend, upscaling low-res sources to 1080p without downscaling 4K sources | Large | Medium | Backend-dependent | Client compatibility at higher resolution |
-| 4K Transcode | Encodes 2160p H.264/AAC HLS with the selected backend | XL | Medium to high | High | Higher-bitrate 4K output for capable local clients |
-| Enhanced 1080p | Deinterlaces, scales, sharpens, then encodes with the selected backend | Large | High | Backend-dependent | General quality improvement for soft/interlaced channels |
-| Clean 1080p | Deinterlaces, denoises, lightly sharpens, then encodes with the selected backend | Large | High | Backend-dependent | Noisy or blocky low-bitrate channels |
+| Compatibility 720p | Encodes H.264/AAC HLS with the selected backend and caps video at 720p | Large | Low to medium | Backend-dependent | Weak clients, lower bandwidth, normalizing odd streams |
+| Compatibility 1080p | Encodes H.264/AAC HLS with the selected backend and caps video at 1080p | Large | Medium | Backend-dependent | Client compatibility at higher resolution |
+| Repair 1080p | Deinterlaces, lightly denoises, sharpens, then encodes at up to 1080p | Large | High | Backend-dependent | Rough, noisy, or soft low-bitrate channels |
 | Deinterlace 720p60 | Converts interlaced field motion to 60 fps output at 720p | XL | High | Low to medium | True interlaced sports/news feeds where field-rate motion matters |
 | Deinterlace 1080p60 | Heavy field-rate deinterlace for true 1080i feeds | XL | Very high | Medium to high | Only for stable high-bitrate 1080i feeds on capable servers |
-| Sports 720p60 | Field-rate deinterlaces to 720p60 with sharpening and hardware detail/denoise where supported | XL | High | Medium | Sports channels on QSV/VAAPI systems |
 
-On the Xeon E3-1245 v6 / Intel HD Graphics P630, start with Stable HLS, 720p Transcode, Enhanced 1080p, and Sports 720p60 for sports. Treat 4K Transcode and Deinterlace 1080p60 as experimental because they can be bandwidth-heavy or CPU-heavy depending on the stream.
+On the Xeon E3-1245 v6 / Intel HD Graphics P630, start with Stable HLS, Compatibility 720p, Compatibility 1080p, and Deinterlace 720p60 for sports. Treat Deinterlace 1080p60 as experimental because it can be bandwidth-heavy or CPU-heavy depending on the stream.
 
 The buffer setting controls the steady-state playback buffer, not a long startup wait. The player starts close to the live edge and then fills the selected buffer size in the background. Server-generated HLS uses short 2-second segments to reduce channel-change delay while still allowing larger buffers for unstable or CPU-heavy profiles.
 
@@ -223,10 +220,10 @@ Useful options:
 
 | Option / env var | Example | Description |
 |---|---|---|
-| `--profiles=` / `PLAYBACK_TEST_PROFILES` | `transcode_720p,sports_720p60` | Limit playback profiles |
+| `--profiles=` / `PLAYBACK_TEST_PROFILES` | `transcode_720p,smooth_720p60` | Limit playback profiles |
 | `--backend=` / `PLAYBACK_TEST_BACKEND` | `videotoolbox` | Test a specific backend. Defaults to `cpu` |
 | `--audio-profile=` / `PLAYBACK_TEST_AUDIO_PROFILE` | `surround_5_1_aggressive` | Test no processing, light normalization, or either 5.1 mode |
-| `--all` | | Include heavier profiles such as 4K and 1080p60 |
+| `--all` | | Include heavier profiles such as 1080p60 |
 | `--headed` | | Show the browser while testing |
 | `--keep-output` | | Keep temp DB, HLS cache, and artifacts |
 | `--report-dir=` | `test-results/playback-e2e-...` | Write screenshots and `index.html` to a specific report directory |

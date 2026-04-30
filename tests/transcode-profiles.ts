@@ -61,13 +61,11 @@ function selectedProfiles() {
     'stable_hls',
     'transcode_720p',
     'transcode_1080p',
-    'enhanced_1080p',
-    'clean_1080p',
+    'repair_1080p',
     'smooth_720p60',
-    'sports_720p60',
   ]
 
-  return hasArg('--all') ? [...base, 'transcode_4k', 'smooth_1080p60'] : base
+  return hasArg('--all') ? [...base, 'smooth_1080p60'] : base
 }
 
 function qsvDevicePath() {

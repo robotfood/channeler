@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import type { PlaylistSettingsData } from '@/lib/app-data'
+import { normalizePlaybackProfile } from '@/lib/playback-profile'
 
 type PlaylistSettings = PlaylistSettingsData
 
@@ -48,43 +49,27 @@ const PLAYBACK_PROFILES = [
   },
   {
     value: 'transcode_720p',
-    label: '720p Transcode (Min)',
-    detail: 'Upscales lower resolutions to 720p; keeps 1080p+ sources at full quality. Uses selected hardware backend.',
+    label: 'Compatibility 720p',
+    detail: 'Converts to H.264 HLS and caps video at 720p for broad device support and lower bandwidth.',
     fps: 'Source',
-    res: 'Min 720p',
-    quality: 'Lanczos (No-Downscale)',
+    res: 'Max 720p',
+    quality: 'Compatibility',
   },
   {
     value: 'transcode_1080p',
-    label: '1080p Transcode (Min)',
-    detail: 'Upscales lower resolutions to 1080p; keeps 4K sources at full quality. Uses selected hardware backend.',
+    label: 'Compatibility 1080p',
+    detail: 'Converts to H.264 HLS and caps video at 1080p while preserving source frame rate.',
     fps: 'Source',
-    res: 'Min 1080p',
-    quality: 'Lanczos (No-Downscale)',
+    res: 'Max 1080p',
+    quality: 'Compatibility',
   },
   {
-    value: 'transcode_4k',
-    label: '4K Transcode',
-    detail: 'Upscales or normalizes streams to 2160p HLS. Higher bitrate, best for 4K displays. Experimental.',
+    value: 'repair_1080p',
+    label: 'Repair 1080p',
+    detail: 'Deinterlaces, lightly denoises, and sharpens rough or low-bitrate feeds at up to 1080p.',
     fps: 'Source',
-    res: '4K',
-    quality: 'Lanczos scaling',
-  },
-  {
-    value: 'enhanced_1080p',
-    label: 'Enhanced 1080p',
-    detail: 'Deinterlaces, scales, and lightly sharpens to improve soft or interlaced feeds.',
-    fps: 'Source',
-    res: '1080p',
-    quality: 'Deinterlace, Scale, Sharpen',
-  },
-  {
-    value: 'clean_1080p',
-    label: 'Clean 1080p',
-    detail: 'Adds denoise plus mild sharpening for low-bitrate streams with compression noise.',
-    fps: 'Source',
-    res: '1080p',
-    quality: 'Deinterlace, Denoise, Scale, Sharpen',
+    res: 'Max 1080p',
+    quality: 'Repair',
   },
   {
     value: 'smooth_720p60',
@@ -102,15 +87,7 @@ const PLAYBACK_PROFILES = [
     res: '1080p',
     quality: 'Heavy field-rate deinterlace',
   },
-  {
-    value: 'sports_720p60',
-    label: 'Sports 720p60',
-    detail: 'Field-rate deinterlaces to 720p60 with subtle detail enhancement and noise reduction where supported.',
-    fps: '60',
-    res: '720p',
-    quality: 'Deinterlace + enhancement',
-  },
-]
+] as const
 
 type PlaybackProfileValue = typeof PLAYBACK_PROFILES[number]['value']
 
@@ -151,6 +128,9 @@ export default function PlaylistSettingsClient({ initialData, playlistId }: {
   playlistId: string
 }) {
   const router = useRouter()
+  const initialPlaybackProfile = normalizePlaybackProfile(
+    initialData.playbackProfile === 'direct' && initialData.proxyStreams ? 'proxy' : initialData.playbackProfile
+  )
   const [data] = useState<PlaylistSettings>(initialData)
   const [name, setName] = useState(initialData.name)
   const [m3uUrl, setM3uUrl] = useState(initialData.m3uUrl ?? '')
@@ -165,11 +145,9 @@ export default function PlaylistSettingsClient({ initialData, playlistId }: {
   const [bufferSize, setBufferSize] = useState(initialData.bufferSize ?? 'medium')
   const [transcodeBackend, setTranscodeBackend] = useState(initialData.transcodeBackend ?? 'auto')
   const [audioProfile, setAudioProfile] = useState(initialData.audioProfile ?? 'none')
-  const [playbackProfile, setPlaybackProfile] = useState(
-    initialData.playbackProfile === 'direct' && initialData.proxyStreams ? 'proxy' : initialData.playbackProfile ?? 'direct'
-  )
+  const [playbackProfile, setPlaybackProfile] = useState(initialPlaybackProfile)
   const [proxyProfile, setProxyProfile] = useState<PlaybackProfileValue>(
-    playbackProfile === 'direct' ? 'proxy' : playbackProfile as PlaybackProfileValue
+    initialPlaybackProfile === 'direct' ? 'proxy' : initialPlaybackProfile as PlaybackProfileValue
   )
   const [proxyEpg, setProxyEpg] = useState(initialData.proxyEpg)
   const [saving, setSaving] = useState(false)
@@ -419,7 +397,7 @@ export default function PlaylistSettingsClient({ initialData, playlistId }: {
                   </label>
                 ))}
                 <div className="space-y-1 pt-1 text-[10px] leading-4 text-gray-400 dark:text-gray-500">
-                  <p>Transcode, enhancement, and 60 FPS modes require FFmpeg. Hardware modes use the backend setting above.</p>
+                  <p>Transcode, repair, and 60 FPS modes require FFmpeg. Hardware modes use the backend setting above.</p>
                   <dl className="grid gap-x-3 gap-y-1 sm:grid-cols-[auto_1fr]">
                     {TRANSCODE_BACKENDS.map(backend => (
                       <div key={backend.name} className="contents">

@@ -26,14 +26,11 @@ const ENCODING_BUDGETS = {
   stableHlsAudio: { audioBitrate: '192k', enhancedAudioBitrate: '384k' },
   transcode720p: { videoBitrate: '3500k', maxrate: '3500k', bufsize: '7000k', audioBitrate: '192k', enhancedAudioBitrate: '384k' },
   transcode1080p: { videoBitrate: '6000k', maxrate: '6000k', bufsize: '12000k', audioBitrate: '192k', enhancedAudioBitrate: '512k' },
-  transcode4k: { videoBitrate: '20000k', maxrate: '20000k', bufsize: '40000k', audioBitrate: '256k', enhancedAudioBitrate: '640k' },
-  enhanced1080p: { videoBitrate: '6500k', maxrate: '6500k', bufsize: '13000k', audioBitrate: '192k', enhancedAudioBitrate: '512k' },
-  clean1080p: { videoBitrate: '6000k', maxrate: '6000k', bufsize: '12000k', audioBitrate: '192k', enhancedAudioBitrate: '512k' },
+  repair1080p: { videoBitrate: '6000k', maxrate: '6000k', bufsize: '12000k', audioBitrate: '192k', enhancedAudioBitrate: '512k' },
   smooth720p60Hardware: { videoBitrate: '5000k', maxrate: '5000k', bufsize: '10000k', audioBitrate: '192k', enhancedAudioBitrate: '384k' },
   smooth720p60Software: { videoBitrate: '4500k', maxrate: '4500k', bufsize: '9000k', audioBitrate: '192k', enhancedAudioBitrate: '384k' },
   smooth1080p60Hardware: { videoBitrate: '8500k', maxrate: '8500k', bufsize: '17000k', audioBitrate: '192k', enhancedAudioBitrate: '512k' },
   smooth1080p60Software: { videoBitrate: '7500k', maxrate: '7500k', bufsize: '15000k', audioBitrate: '192k', enhancedAudioBitrate: '512k' },
-  sports720p60: { videoBitrate: '5500k', maxrate: '5500k', bufsize: '11000k', audioBitrate: '192k', enhancedAudioBitrate: '384k' },
 } as const
 
 const FPS = {
@@ -87,7 +84,7 @@ function fpsArgs(fps?: number) {
 }
 
 function maxHeightScaleFilter(height: number, scaleFlags = 'bicubic') {
-  return `scale=-2:'max(ih\\,${height})':flags=${scaleFlags}`
+  return `scale=-2:'min(ih\\,${height})':flags=${scaleFlags}`
 }
 
 function videoToolboxFilter(filter: string) {
@@ -147,8 +144,8 @@ export function hlsArgs(outputDir: string, segmentTime = 2) {
 function cpuH264Args(height: number, budget: EncodingBudget, audioProfile: AudioProfile, streamMap?: StreamMap) {
   return [
     ...streamMapArgs(streamMap),
-    // Use max(ih, height) to upscale low-res but never downscale high-res.
-    // The comma in max() must be escaped because it is inside a filter chain.
+    // Use min(ih, height) to cap tall sources without upscaling low-res feeds.
+    // The comma in min() must be escaped because it is inside a filter chain.
     '-vf', `${maxHeightScaleFilter(height)},format=yuv420p`,
     '-c:v', 'libx264',
     '-preset', 'veryfast',
@@ -313,22 +310,11 @@ export function profileArgs(profile: string, backend: TranscodeBackend, options:
       return hardwareH264Args(backend, 720, ENCODING_BUDGETS.transcode720p, audioProfile, 'bicubic', streamMap)
     case 'transcode_1080p':
       return hardwareH264Args(backend, 1080, ENCODING_BUDGETS.transcode1080p, audioProfile, 'bicubic', streamMap)
-    case 'transcode_4k':
-      return hardwareH264Args(backend, 2160, ENCODING_BUDGETS.transcode4k, audioProfile, 'bicubic', streamMap)
-    case 'enhanced_1080p':
+    case 'repair_1080p':
       return hardwareFilteredH264Args(
         backend,
-        'yadif=mode=0:parity=auto:deint=interlaced,scale=-2:\'max(ih\\,1080)\':flags=bicubic,unsharp=5:5:0.45:3:3:0.25',
-        ENCODING_BUDGETS.enhanced1080p,
-        audioProfile,
-        FPS.broadcast,
-        streamMap
-      )
-    case 'clean_1080p':
-      return hardwareFilteredH264Args(
-        backend,
-        'yadif=mode=0:parity=auto:deint=interlaced,hqdn3d=1.5:1.5:4:4,scale=-2:\'max(ih\\,1080)\':flags=bicubic,unsharp=3:3:0.25:3:3:0.12',
-        ENCODING_BUDGETS.clean1080p,
+        'bwdif=mode=send_frame:parity=auto:deint=interlaced,hqdn3d=1.2:1.2:3:3,scale=-2:\'min(ih\\,1080)\':flags=bicubic,unsharp=3:3:0.25:3:3:0.12',
+        ENCODING_BUDGETS.repair1080p,
         audioProfile,
         FPS.broadcast,
         streamMap
@@ -336,15 +322,11 @@ export function profileArgs(profile: string, backend: TranscodeBackend, options:
     case 'smooth_720p60':
       if (backend === 'vaapi') return hardwareFilteredH264Args(backend, 'hwupload,deinterlace_vaapi,scale_vaapi=w=-2:h=720:format=nv12', ENCODING_BUDGETS.smooth720p60Hardware, audioProfile, FPS.smooth, streamMap)
       if (backend === 'qsv') return hardwareFilteredH264Args(backend, 'format=nv12,vpp_qsv=deinterlace=2:w=-2:h=720', ENCODING_BUDGETS.smooth720p60Hardware, audioProfile, FPS.smooth, streamMap)
-      return hardwareFilteredH264Args(backend, 'yadif=mode=send_field:parity=auto:deint=interlaced,scale=-2:\'max(ih\\,720)\':flags=bicubic', ENCODING_BUDGETS.smooth720p60Software, audioProfile, FPS.smooth, streamMap)
+      return hardwareFilteredH264Args(backend, 'bwdif=mode=send_field:parity=auto:deint=interlaced,scale=-2:\'min(ih\\,720)\':flags=bicubic', ENCODING_BUDGETS.smooth720p60Software, audioProfile, FPS.smooth, streamMap)
     case 'smooth_1080p60':
       if (backend === 'vaapi') return hardwareFilteredH264Args(backend, 'hwupload,deinterlace_vaapi,scale_vaapi=w=-2:h=1080:format=nv12', ENCODING_BUDGETS.smooth1080p60Hardware, audioProfile, FPS.smooth, streamMap)
       if (backend === 'qsv') return hardwareFilteredH264Args(backend, 'format=nv12,vpp_qsv=deinterlace=2:w=-2:h=1080', ENCODING_BUDGETS.smooth1080p60Hardware, audioProfile, FPS.smooth, streamMap)
-      return hardwareFilteredH264Args(backend, 'yadif=mode=send_field:parity=auto:deint=interlaced,scale=-2:\'max(ih\\,1080)\':flags=bicubic', ENCODING_BUDGETS.smooth1080p60Software, audioProfile, FPS.smooth, streamMap)
-    case 'sports_720p60':
-      if (backend === 'vaapi') return hardwareFilteredH264Args(backend, 'hwupload,deinterlace_vaapi,scale_vaapi=w=-2:h=720:format=nv12', ENCODING_BUDGETS.sports720p60, audioProfile, FPS.smooth, streamMap)
-      if (backend === 'qsv') return hardwareFilteredH264Args(backend, 'format=nv12,vpp_qsv=deinterlace=2:w=-2:h=720:detail=50:denoise=20', ENCODING_BUDGETS.sports720p60, audioProfile, FPS.smooth, streamMap)
-      return hardwareFilteredH264Args(backend, 'yadif=mode=send_field:parity=auto:deint=interlaced,scale=-2:\'max(ih\\,720)\':flags=bicubic,unsharp=5:5:0.35:3:3:0.2', ENCODING_BUDGETS.sports720p60, audioProfile, FPS.smooth, streamMap)
+      return hardwareFilteredH264Args(backend, 'bwdif=mode=send_field:parity=auto:deint=interlaced,scale=-2:\'min(ih\\,1080)\':flags=bicubic', ENCODING_BUDGETS.smooth1080p60Software, audioProfile, FPS.smooth, streamMap)
     default:
       if (options.unknownProfile === 'throw') throw new Error(`Unknown profile: ${profile}`)
       return [...streamMapArgs(streamMap), '-c', 'copy']
