@@ -12,6 +12,7 @@ Self-hosted web app for managing M3U IPTV playlists. Import playlists from a URL
 - Filtered M3U and EPG served as live proxy URLs for any IPTV player on your network
 - Auto-refresh on a schedule (1h / 6h / 12h / 24h / 7d)
 - Optional server playback profiles for proxying, stable HLS remuxing, and FFmpeg-based transcoding
+- Ultra-low latency web player using `mpegts.js` (0.8s - 1.5s delay)
 - Refresh log showing history of all fetches
 
 ## Quick start (Docker)
@@ -55,20 +56,18 @@ docker exec channeler channeler-qsv-check
 
 Playback profiles control whether clients receive the original stream, a proxied stream, or a server-generated HLS stream. Any mode except Direct routes video through Channeler.
 
-| Profile | What it does | Ideal buffer | CPU load | GPU load | Best use |
+| Profile | What it does | Latency | CPU load | GPU load | Best use |
 |---|---|---|---:|---:|---|
-| Direct source | Sends clients to the provider URL directly | Medium | None | None | Lowest latency and no server work |
-| Proxy passthrough | Proxies the original stream through Channeler | Medium | Very low | None | VPN routing, hiding provider URL, connection sharing |
-| Stable HLS remux | Uses FFmpeg to repackage into local HLS without re-encoding when possible | Large | Low | None | Better stability and client compatibility with minimal quality loss |
-| Compatibility 720p | Encodes H.264/AAC HLS with the selected backend and caps video at 720p | Large | Low to medium | Backend-dependent | Weak clients, lower bandwidth, normalizing odd streams |
-| Compatibility 1080p | Encodes H.264/AAC HLS with the selected backend and caps video at 1080p | Large | Medium | Backend-dependent | Client compatibility at higher resolution |
-| Repair 1080p | Deinterlaces, lightly denoises, sharpens, then encodes at up to 1080p | Large | High | Backend-dependent | Rough, noisy, or soft low-bitrate channels |
-| Deinterlace 720p60 | Converts interlaced field motion to 60 fps output at 720p | XL | High | Low to medium | True interlaced sports/news feeds where field-rate motion matters |
-| Deinterlace 1080p60 | Heavy field-rate deinterlace for true 1080i feeds | XL | Very high | Medium to high | Only for stable high-bitrate 1080i feeds on capable servers |
+| Direct source | Sends clients to the provider URL directly | Low | None | None | Lowest latency and no server work |
+| Proxy passthrough | Proxies the original stream through Channeler | Low | Very low | None | VPN routing, hiding provider URL, connection sharing |
+| Stable HLS remux | Uses FFmpeg to repackage into local MPEG-TS | Low | Low | None | Better stability and client compatibility with minimal quality loss |
+| Compatibility 720p | Encodes H.264/AAC at 720p | Low | Low to medium | Backend-dependent | Weak clients, lower bandwidth, normalizing odd streams |
+| Compatibility 1080p | Encodes H.264/AAC at 1080p | Low | Medium | Backend-dependent | Client compatibility at higher resolution |
+| Repair 1080p | Deinterlaces, lightly denoises, sharpens, up to 1080p | Low | High | Backend-dependent | Rough, noisy, or soft low-bitrate channels |
+| Deinterlace 720p60 | Converts field motion to 60 fps at 720p | Low | High | Low to medium | True interlaced sports/news feeds where field-rate motion matters |
+| Deinterlace 1080p60 | Heavy deinterlace for true 1080i feeds | Low | Very high | Medium to high | Only for stable high-bitrate 1080i feeds on capable servers |
 
-On the Xeon E3-1245 v6 / Intel HD Graphics P630, start with Stable HLS, Compatibility 720p, Compatibility 1080p, and Deinterlace 720p60 for sports. Treat Deinterlace 1080p60 as experimental because it can be bandwidth-heavy or CPU-heavy depending on the stream.
-
-The buffer setting controls the steady-state playback buffer, not a long startup wait. The player starts close to the live edge and then fills the selected buffer size in the background. Server-generated HLS uses short 2-second segments to reduce channel-change delay while still allowing larger buffers for unstable or CPU-heavy profiles.
+The built-in web player uses **mpegts.js** to stream directly from server-side FFmpeg pipes. This provides "instant" channel switching with sub-2 second latency. Unlike traditional HLS, there is no segmented disk cache; the video data is streamed directly to your browser as it is generated.
 
 Audio processing is separate from the video profile. None re-encodes audio to AAC for compatibility without volume normalization or upmixing. Standard AAC adds a light normalization pass while preserving the source channel layout. Surround 5.1 applies stronger dynamic normalization and a conservative stereo-to-5.1 upmix. Aggressive 5.1 pushes stereo harder into a 5.1 field using FFmpeg's `surround` filter; use it only when you want that processed sound.
 
@@ -144,7 +143,7 @@ Use these tests when changing stream proxying, FFmpeg args, playback profiles, a
 | Test | Command | What it proves |
 |---|---|---|
 | FFmpeg transcode smoke | `npm run test:transcode` | FFmpeg can generate HLS files for the configured profiles/backends |
-| Browser playback E2E | `npm run test:playback` | Chromium + hls.js can actually play the generated stream |
+| Browser playback E2E | `npm run test:playback` | Chromium + mpegts.js can actually play the generated stream |
 | Xtream import integration | `npm run test:xtream` | A real Xtream provider can be imported into a temp database |
 
 Recommended local media-profile pass:
@@ -214,7 +213,8 @@ Run the browser playback test when FFmpeg can generate files but the web player 
 npm run test:playback
 ```
 
-The test creates a temporary playlist database, points its test channel at `https://skynewsau-live.akamaized.net/hls/live/2002689/skynewsau-extra1/master.m3u8`, starts the app on a random localhost port, opens Chromium with Playwright, clicks the test channel, and verifies that hls.js reaches real playback for each profile. It captures a screenshot two seconds after invoking video playback and writes an HTML report under `test-results/`. On failure it also keeps browser console logs, network failures, current manifests, transcode status, and latest-segment `ffprobe` output under the printed temp directory.
+The test creates a temporary playlist database, points its test channel at `https://skynewsau-live.akamaized.net/hls/live/2002689/skynewsau-extra1/master.m3u8`, starts the app on a random localhost port, opens Chromium with Playwright, clicks the test channel, and verifies that `mpegts.js` reaches real playback for each profile using the `/api/stream` endpoint.
+ It captures a screenshot two seconds after invoking video playback and writes an HTML report under `test-results/`. On failure it also keeps browser console logs, network failures, current manifests, transcode status, and latest-segment `ffprobe` output under the printed temp directory.
 
 Useful options:
 

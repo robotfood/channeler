@@ -245,7 +245,7 @@ Global settings page for:
 |---|---|---|
 | `GET` | `/api/output/[id]/m3u` | serve filtered playlist by numeric id or slug |
 | `GET` | `/api/output/[id]/xml` | serve filtered XMLTV by numeric id or slug |
-| `GET` | `/api/stream/[channelId]` | proxy a channel stream when playlist proxying is enabled |
+| `GET` | `/api/stream/[channelId]` | transcode and stream a channel as MPEG-TS for the web player |
 | `GET` | `/api/stream/segment` | proxy rewritten HLS segment requests |
 | `GET` | `/api/proxy/logo` | image proxy for channel logos |
 
@@ -341,17 +341,29 @@ If `proxy_streams` is enabled:
 The response uses:
 - `Content-Type: application/x-mpegurl`
 - `Content-Disposition: attachment; filename="<playlist-name>.m3u"`
-
----
-
 ## Stream Proxy Behavior
 
 When stream proxying is enabled for a playlist:
 1. The output M3U emits local stream proxy URLs.
-2. The stream proxy fetches the upstream channel URL.
-3. If the upstream response is an HLS playlist, the body is rewritten so media segment URLs point at `/api/stream/segment`.
-4. Non-HLS responses are streamed through directly.
+2. For the built-in web player, the stream is transcoded to MPEG-TS on-the-fly via FFmpeg.
+3. The transcoded data is piped directly to the HTTP response, providing ultra-low latency playback via `mpegts.js`.
+4. Disconnecting the client (aborting the HTTP request) automatically terminates the underlying FFmpeg process.
 5. Success and error events are written to `refresh_log` with type `stream`.
+
+---
+
+## Web Player Architecture
+
+The built-in channel player uses **mpegts.js** for high-performance, low-latency live streaming.
+
+1. **Protocol:** MPEG-TS over HTTP (Piped Stream).
+2. **Latency:** Tuned for 0.8s - 1.5s delay.
+3. **Capabilities:** Supports all server-side transcoding profiles (720p, 1080p, Deinterlace, etc.).
+4. **Browser Support:** Requires Media Source Extensions (MSE).
+
+---
+
+## Scheduler Behavior
 
 Proxying is opt-in per playlist. Requests to `/api/stream/[channelId]` return `403` if the playlist does not have proxying enabled.
 
