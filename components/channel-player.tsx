@@ -57,19 +57,6 @@ const PROFILES = [
   { value: 'smooth_1080p60', label: 'Deinterlace 1080p60' },
 ] as const
 
-const BUFFER_CONFIGS: Record<string, {
-  backBufferLength: number
-  maxBufferLength: number
-  maxMaxBufferLength: number
-  liveSyncDurationCount: number
-  liveMaxLatencyDurationCount: number
-}> = {
-  small:  { backBufferLength: 15,  maxBufferLength: 30,  maxMaxBufferLength: 60,  liveSyncDurationCount: 3, liveMaxLatencyDurationCount: 5 },
-  medium: { backBufferLength: 30,  maxBufferLength: 60,  maxMaxBufferLength: 120, liveSyncDurationCount: 3, liveMaxLatencyDurationCount: 6 },
-  large:  { backBufferLength: 60,  maxBufferLength: 120, maxMaxBufferLength: 240, liveSyncDurationCount: 4, liveMaxLatencyDurationCount: 8 },
-  xl:     { backBufferLength: 120, maxBufferLength: 240, maxMaxBufferLength: 600, liveSyncDurationCount: 5, liveMaxLatencyDurationCount: 10 },
-}
-
 const PLAYBACK_PROFILE_LABELS: Record<string, string> = {
   direct: 'Direct',
   proxy: 'Proxy passthrough',
@@ -330,7 +317,6 @@ export default function ChannelPlayer({ url, title, channelId, playlistId, buffe
     setPlaybackStats({ width: null, height: null, fps: null })
     frameStatsRef.current = { frames: 0, startedAt: 0 }
     retryCountRef.current = 0
-    const config = BUFFER_CONFIGS[bufferSize] || BUFFER_CONFIGS.medium
     let frameCallbackId: number | null = null
 
     function updateResolution() {
@@ -399,7 +385,7 @@ export default function ChannelPlayer({ url, title, channelId, playlistId, buffe
         }, Math.min(1000 * Math.pow(2, retryCountRef.current), 30000))
       })
     } else {
-      setError('Your browser does not support MPEG-TS playback (MSE required)')
+      setTimeout(() => setError('Your browser does not support MPEG-TS playback (MSE required)'), 0)
     }
 
     return () => {
