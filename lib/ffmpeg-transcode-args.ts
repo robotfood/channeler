@@ -141,6 +141,14 @@ export function hlsArgs(outputDir: string, segmentTime = 2) {
   ]
 }
 
+export function mpegtsArgs() {
+  return [
+    '-f', 'mpegts',
+    '-fflags', '+genpts',
+    'pipe:1',
+  ]
+}
+
 function cpuH264Args(height: number, budget: EncodingBudget, audioProfile: AudioProfile, streamMap?: StreamMap) {
   return [
     ...streamMapArgs(streamMap),
