@@ -1,110 +1,57 @@
 export const dynamic = 'force-dynamic'
+export const runtime = 'nodejs'
 
 import { NextRequest, NextResponse } from 'next/server'
-import { db } from '@/lib/db'
-import { channels, playlists, refreshLog } from '@/lib/schema'
 import { eq } from 'drizzle-orm'
-import {
-  buildUpstreamRequestHeaders,
-  countSetCookieHeaders,
-  deriveProxyContext,
-  isLikelyHLSUrl,
-  logProxyDebug,
-  summarizeUrl,
-  toProxyResponse,
-} from '@/lib/stream-proxy'
-import { getPublicBaseUrl } from '@/lib/public-base-url'
-import { getSharedStream } from '@/lib/stream-multiplexer'
-
-const CONNECT_TIMEOUT_MS = 10_000
-
-async function logStream(playlistId: number, channelName: string, status: 'success' | 'error', detail?: string) {
-  const msg = detail ?? channelName
-  console.log(`[stream] ${new Date().toISOString()} channel=${channelName} status=${status}${detail ? ` detail=${detail}` : ''}`)
-  await db.insert(refreshLog).values({
-    playlistId,
-    type: 'stream',
-    triggeredBy: 'player',
-    status,
-    detail: msg,
-  })
-}
-
-function errorDetail(err: unknown) {
-  if (err instanceof Error) {
-    return err.name === 'AbortError' ? 'Connect timeout' : err.message
-  }
-  return String(err)
-}
+import { db } from '@/lib/db'
+import { channels, playlists } from '@/lib/schema'
+import { spawnMpegtsStream } from '@/lib/server-stream'
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ channelId: string }> }) {
   const { channelId } = await params
   const id = parseInt(channelId)
+  if (!Number.isFinite(id)) return new NextResponse('Invalid channel id', { status: 400 })
 
   const [channel] = await db.select().from(channels).where(eq(channels.id, id))
   if (!channel) return new NextResponse('Not found', { status: 404 })
 
   const [playlist] = await db.select().from(playlists).where(eq(playlists.id, channel.playlistId))
-  if (!playlist?.proxyStreams) return new NextResponse('Stream proxy not enabled for this playlist', { status: 403 })
+  if (!playlist) return new NextResponse('Playlist not found', { status: 404 })
 
-  const requestContext = {
-    userAgent: req.headers.get('user-agent') ?? undefined,
-  }
+  const process = spawnMpegtsStream(channel, playlist)
 
-  if (!isLikelyHLSUrl(channel.streamUrl)) {
-    try {
-      const { stream, contentType } = await getSharedStream(channel.streamUrl, buildUpstreamRequestHeaders(req, requestContext))
-      await logStream(playlist.id, channel.displayName, 'success')
-      return new NextResponse(stream, {
-        headers: {
-          'Content-Type': contentType || 'video/mp2t',
-          'Cache-Control': 'no-store, no-cache, must-revalidate',
-          'Pragma': 'no-cache',
+  const stream = new ReadableStream({
+    start(controller) {
+      process.stdout.on('data', (chunk) => controller.enqueue(chunk))
+      process.stdout.on('end', () => controller.close())
+      process.stdout.on('error', (err) => controller.error(err))
+      
+      process.stderr.on('data', (chunk) => {
+        // Log errors but don't stop the stream unless critical
+        const msg = chunk.toString().trim()
+        if (msg) console.error(`[stream] channel=${id} ffmpeg: ${msg}`)
+      })
+
+      process.on('exit', (code, signal) => {
+        console.log(`[stream] channel=${id} ffmpeg exit code=${code} signal=${signal}`)
+        try {
+          controller.close()
+        } catch {
+          // Ignore if already closed
         }
       })
-    } catch (err) {
-      const msg = errorDetail(err)
-      await logStream(playlist.id, channel.displayName, 'error', msg)
-      return new NextResponse(msg, { status: 502 })
+    },
+    cancel() {
+      console.log(`[stream] channel=${id} client disconnected, killing ffmpeg pid=${process.pid}`)
+      process.kill('SIGTERM')
     }
-  }
-
-  const abort = new AbortController()
-  const timer = setTimeout(() => abort.abort(), CONNECT_TIMEOUT_MS)
-
-  let upstream: Response
-  try {
-    upstream = await fetch(channel.streamUrl, {
-      redirect: 'follow',
-      signal: abort.signal,
-      headers: buildUpstreamRequestHeaders(req, requestContext),
-    })
-  } catch (err: unknown) {
-    clearTimeout(timer)
-    const detail = errorDetail(err)
-    await logStream(playlist.id, channel.displayName, 'error', detail)
-    return new NextResponse(detail, { status: 502 })
-  }
-  clearTimeout(timer)
-
-  logProxyDebug('stream-debug', {
-    channel: channel.displayName,
-    requestUrl: summarizeUrl(channel.streamUrl),
-    finalUrl: summarizeUrl(upstream.url || channel.streamUrl),
-    status: upstream.status,
-    contentType: upstream.headers.get('content-type') ?? undefined,
-    cacheControl: upstream.headers.get('cache-control') ?? undefined,
-    setCookieCount: countSetCookieHeaders(upstream.headers),
-    requestRange: req.headers.get('range') ?? undefined,
   })
 
-  if (!upstream.ok || !upstream.body) {
-    await logStream(playlist.id, channel.displayName, 'error', `Upstream ${upstream.status}`)
-    return new NextResponse('Upstream error', { status: 502 })
-  }
-
-  const baseUrl = getPublicBaseUrl(req)
-  await logStream(playlist.id, channel.displayName, 'success')
-  const proxyContext = deriveProxyContext(channel.streamUrl, upstream, requestContext)
-  return toProxyResponse(upstream, upstream.url || channel.streamUrl, baseUrl, proxyContext)
+  return new NextResponse(stream, {
+    headers: {
+      'Content-Type': 'video/mp2t',
+      'Cache-Control': 'no-cache, no-store, must-revalidate',
+      'Connection': 'keep-alive',
+    },
+  })
 }
