@@ -2,7 +2,7 @@
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { useEffect, useRef, useState } from 'react'
-import Hls from 'hls.js'
+import mpegts from 'mpegts.js'
 import { normalizePlaybackProfile, type PlaybackProfile } from '@/lib/playback-profile'
 
 interface Props {
@@ -103,19 +103,19 @@ export default function ChannelPlayer({ url, title, channelId, playlistId, buffe
   const [showSettings, setShowSettings] = useState(false)
   const [activeProfile, setActiveProfile] = useState(normalizePlaybackProfile(playbackProfile || 'proxy'))
   const [activeBackend, setActiveBackend] = useState(transcodeBackend || 'auto')
-  const [streamUrl, setStreamUrl] = useState(url)
+  const [streamUrl, setStreamUrl] = useState(`/api/stream/${channelId}`)
   const [playbackStats, setPlaybackStats] = useState<PlaybackStats>({ width: null, height: null, fps: null })
   const [transcodeStats, setTranscodeStats] = useState<TranscodeStats | null>(null)
   const [isStoppingTranscode, setIsStoppingTranscode] = useState(false)
   const [transcodeStopped, setTranscodeStopped] = useState(false)
-  const hlsRef = useRef<Hls | null>(null)
+  const playerRef = useRef<mpegts.Player | null>(null)
   const retryCountRef = useRef(0)
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const frameStatsRef = useRef({ frames: 0, startedAt: 0 })
   const versionRef = useRef(0)
   const transcodeStopRequestedRef = useRef(false)
   const modeLabel = playbackModeLabel(activeProfile, proxyStreams)
-  const isTranscodedStream = streamUrl.startsWith('/api/transcode/')
+  const isTranscodedStream = true
 
   useEffect(() => {
     function handleUnhandledRejection(event: PromiseRejectionEvent) {
@@ -236,13 +236,11 @@ export default function ChannelPlayer({ url, title, channelId, playlistId, buffe
       if (newProfile) setActiveProfile(profile)
       if (newBackend) setActiveBackend(backend)
       
-      // Reload stream - since the backend/profile changed, the server will restart the process
-      // We need to force a URL refresh by adding a cache-buster or just re-setting it
-      const base = streamUrl.split('?')[0]
+      // Reload stream - force a refresh by adding a version parameter
       versionRef.current += 1
       transcodeStopRequestedRef.current = false
       setTranscodeStopped(false)
-      setStreamUrl(`${base}?v=${versionRef.current}`)
+      setStreamUrl(`/api/stream/${channelId}?v=${versionRef.current}`)
       setShowSettings(false)
     } catch (err) {
       console.error('Failed to update playlist settings', err)
@@ -250,7 +248,7 @@ export default function ChannelPlayer({ url, title, channelId, playlistId, buffe
   }
 
   async function stopTranscoding() {
-    if (!isTranscodedStream || isStoppingTranscode) return
+    if (isStoppingTranscode) return
 
     transcodeStopRequestedRef.current = true
     setIsStoppingTranscode(true)
@@ -261,9 +259,9 @@ export default function ChannelPlayer({ url, title, channelId, playlistId, buffe
       reconnectTimerRef.current = null
     }
 
-    if (hlsRef.current) {
-      hlsRef.current.destroy()
-      hlsRef.current = null
+    if (playerRef.current) {
+      playerRef.current.destroy()
+      playerRef.current = null
     }
 
     if (videoRef.current) {
@@ -272,19 +270,9 @@ export default function ChannelPlayer({ url, title, channelId, playlistId, buffe
       videoRef.current.load()
     }
 
-    try {
-      const res = await fetch(`/api/transcode/${channelId}/stop`, { method: 'POST' })
-      if (!res.ok) throw new Error(await res.text())
-      setTranscodeStats(null)
-      setTranscodeStopped(true)
-      setError(null)
-    } catch (err) {
-      transcodeStopRequestedRef.current = false
-      setTranscodeStopped(false)
-      setError(err instanceof Error ? err.message : 'Unable to stop transcoding')
-    } finally {
-      setIsStoppingTranscode(false)
-    }
+    setTranscodeStats(null)
+    setTranscodeStopped(true)
+    setIsStoppingTranscode(false)
   }
 
   useEffect(() => {
@@ -377,66 +365,41 @@ export default function ChannelPlayer({ url, title, channelId, playlistId, buffe
       frameCallbackId = media.requestVideoFrameCallback(updateFrameRate)
     }
 
-    if (Hls.isSupported()) {
-      const hls = new Hls({
+    if (mpegts.getFeatureList().mseLivePlayback) {
+      const player = mpegts.createPlayer({
+        type: 'mpegts',
+        isLive: true,
+        url: streamUrl,
+      }, {
         enableWorker: true,
-        lowLatencyMode: false,
-        defaultAudioCodec: 'mp4a.40.2',
-        startFragPrefetch: true,
-        backBufferLength: config.backBufferLength,
-        maxBufferLength: config.maxBufferLength,
-        maxMaxBufferLength: config.maxMaxBufferLength,
-        maxBufferHole: 2,
-        liveSyncDurationCount: config.liveSyncDurationCount,
-        liveMaxLatencyDurationCount: config.liveMaxLatencyDurationCount,
-        manifestLoadingMaxRetry: 10,
-        levelLoadingMaxRetry: 10,
-        fragLoadingMaxRetry: 10,
-        appendErrorMaxRetry: 6,
+        enableStashBuffer: false,
+        stashInitialSize: 128,
+        liveBufferLatencyChasing: true,
+        liveBufferLatencyMaxLatency: 1.5,
+        liveBufferLatencyMinLatency: 0.8,
       })
-      hlsRef.current = hls
-      hls.loadSource(streamUrl)
-      hls.attachMedia(media)
-      hls.on(Hls.Events.MANIFEST_PARSED, () => {
-        retryCountRef.current = 0
-        setError(null)
+      playerRef.current = player
+      player.attachMediaElement(media)
+      player.load()
+      player.play().catch(err => {
+        if (!isBenignMediaAbort(err)) console.error('mpegts play error', err)
       })
-      hls.on(Hls.Events.ERROR, (_event, data) => {
+
+      player.on(mpegts.Events.ERROR, (type, detail) => {
         if (transcodeStopRequestedRef.current) return
-
-        if (data.fatal) {
-          switch (data.type) {
-            case Hls.ErrorTypes.NETWORK_ERROR:
-              setError('Network error - attempting auto-reconnect...')
-              if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current)
-              reconnectTimerRef.current = setTimeout(() => {
-                retryCountRef.current += 1
-                hls.loadSource(streamUrl)
-                hls.startLoad()
-              }, Math.min(1000 * Math.pow(2, retryCountRef.current), 30000))
-              break
-            case Hls.ErrorTypes.MEDIA_ERROR:
-              if (String(data.details ?? '').toLowerCase().includes('bufferappend')) {
-                setError(`Playback append error: ${data.details}`)
-                hls.startLoad()
-                break
-              }
-
-              setError('Media error - trying to recover...')
-              hls.recoverMediaError()
-              break
-            default:
-              setError(`Fatal playback error: ${data.details}`)
-              hls.destroy()
-              break
-          }
-        }
+        setError(`Playback error: ${type} - ${detail}`)
+        
+        // Attempt auto-reconnect
+        if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current)
+        reconnectTimerRef.current = setTimeout(() => {
+          retryCountRef.current += 1
+          player.unload()
+          player.load()
+          player.play()
+        }, Math.min(1000 * Math.pow(2, retryCountRef.current), 30000))
       })
-    } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-      // Native HLS support (Safari/iOS)
-      media.src = streamUrl
     } else {
-      setError('Your browser does not support HLS playback')
+      setError('Your browser does not support MPEG-TS playback (MSE required)')
     }
 
     return () => {
@@ -449,9 +412,9 @@ export default function ChannelPlayer({ url, title, channelId, playlistId, buffe
         clearTimeout(reconnectTimerRef.current)
         reconnectTimerRef.current = null
       }
-      if (hlsRef.current) {
-        hlsRef.current.destroy()
-        hlsRef.current = null
+      if (playerRef.current) {
+        playerRef.current.destroy()
+        playerRef.current = null
       }
     }
   }, [streamUrl, bufferSize])
