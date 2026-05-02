@@ -145,6 +145,6 @@ Set up a GitHub Actions workflow that triggers on push to `main`:
 - [x] Add Intel QSV H.264 playback profiles
 - [x] Add hardware backend selection for Intel QSV and Apple VideoToolbox
 - [x] Add experimental hardware 4K playback profile
-- [ ] Fix Intel QSV probe on Xeon/Unraid Docker when `/dev/dri` is passed through but FFmpeg reports unsupported picture structure/resolution/pixel format and falls back to CPU
-- [ ] Add stream session dashboard with current process/client health
+- [x] Fix Intel QSV probe on Xeon/Unraid Docker when `/dev/dri` is passed through but FFmpeg reports unsupported picture structure/resolution/pixel format and falls back to CPU
+- [x] Add stream session dashboard with current process/client health
 - [ ] Evaluate `node-av` for future in-process media pipelines or managed FFmpeg binary access; keep current child-process FFmpeg path unless it clearly reduces deployment/runtime risk
