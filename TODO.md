@@ -1,13 +1,13 @@
 # TODO
 
-## Stream Proxy
+## ~~Stream Proxy~~ ✅
 
 Add support for proxying video streams through the container (useful when the container is on a VPN):
 
-- Add a `/api/stream/[channelId]` route that fetches the stream from the source and pipes it to the client
-- Rewrite stream URLs in the output M3U to point to the proxy route when enabled
-- Add a per-playlist setting to enable/disable stream proxying
-- Surface the toggle in the playlist settings UI
+- [x] Add a `/api/stream/[channelId]` route that fetches the stream from the source and pipes it to the client
+- [x] Rewrite stream URLs in the output M3U to point to the proxy route when enabled
+- [x] Add a per-playlist setting to enable/disable stream proxying
+- [x] Surface the toggle in the playlist settings UI
 
 ## ~~GitHub Actions CI/CD~~ ✅
 
@@ -148,8 +148,3 @@ Set up a GitHub Actions workflow that triggers on push to `main`:
 - [ ] Fix Intel QSV probe on Xeon/Unraid Docker when `/dev/dri` is passed through but FFmpeg reports unsupported picture structure/resolution/pixel format and falls back to CPU
 - [ ] Add stream session dashboard with current process/client health
 - [ ] Evaluate `node-av` for future in-process media pipelines or managed FFmpeg binary access; keep current child-process FFmpeg path unless it clearly reduces deployment/runtime risk
-
-## Video filters
-
-- [ ] Add a deband/deblock-oriented profile or toggle for noisy, blocky feeds
-- [ ] Benchmark any scaling or filter tweaks on real feeds before changing defaults

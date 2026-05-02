@@ -5,6 +5,7 @@ export const PLAYBACK_PROFILES = [
   'upscale_1080p',
   'upscale_1080p_v2',
   'upscale_4k',
+  'upscale_1080p_hw',
 ] as const
 
 export type PlaybackProfile = typeof PLAYBACK_PROFILES[number]
@@ -57,11 +58,19 @@ export const PROXY_PROFILES: ProxyProfileMeta[] = [
   {
     value: 'upscale_4k',
     label: '4K upscale',
-    detail: 'Upscales to 4K (2160p) using Lanczos + unsharp mask, encoded at CRF 16. High CPU usage. Ideal buffer: large.',
+    detail: 'Upscales to 4K (2160p) using bicubic scaling, encoded at CRF 16. High CPU usage. Ideal buffer: large.',
     fps: 'Source',
     res: '4K',
     quality: 'Enhanced',
     cpuOnly: true,
+  },
+  {
+    value: 'upscale_1080p_hw',
+    label: '1080p upscale (hardware)',
+    detail: 'Upscales to 1080p using Lanczos + unsharp mask with hardware encoding via VideoToolbox or VAAPI. Select backend in settings.',
+    fps: 'Source',
+    res: '1080p',
+    quality: 'Enhanced',
   },
 ]
 

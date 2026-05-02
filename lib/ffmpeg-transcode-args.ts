@@ -107,7 +107,7 @@ export function mpegtsArgs() {
   ]
 }
 
-export function profileArgs(profile: string, _backend: TranscodeBackend, options: ProfileArgsOptions = {}) {
+export function profileArgs(profile: string, backend: TranscodeBackend, options: ProfileArgsOptions = {}) {
   const streamMap = { videoInputIndex: options.videoInputIndex, audioInputIndex: options.audioInputIndex }
   const audioProfile = normalizeAudioProfile(options.audioProfile)
 
@@ -143,9 +143,32 @@ export function profileArgs(profile: string, _backend: TranscodeBackend, options
         '-c:v', 'libx264',
         '-preset', 'veryfast',
         '-crf', '16',
-        '-vf', 'scale=-2:2160:flags=lanczos,unsharp=3:3:0.5',
+        '-vf', 'scale=-2:2160:flags=bicubic',
         ...audioEncodeArgs(ENCODING_BUDGETS.mpegtsRemuxAudio, audioProfile),
       ]
+    case 'upscale_1080p_hw': {
+      if (backend === 'cpu') {
+        return [
+          ...streamMapArgs(streamMap),
+          '-c:v', 'libx264',
+          '-preset', 'veryfast',
+          '-crf', '16',
+          '-vf', 'scale=-2:1080:flags=lanczos,unsharp=3:3:0.5',
+          ...audioEncodeArgs(ENCODING_BUDGETS.mpegtsRemuxAudio, audioProfile),
+        ]
+      }
+      const fmt = probeFormatForBackend(backend)
+      const needsHwupload = backend === 'vaapi' || backend === 'qsv'
+      const vf = `scale=-2:1080:flags=lanczos,unsharp=3:3:0.5,${fmt}${needsHwupload ? ',hwupload' : ''}`
+      const rateArgs = backend === 'vaapi' ? ['-qp', '20'] : ['-b:v', '7000k']
+      return [
+        ...streamMapArgs(streamMap),
+        '-c:v', encoderForBackend(backend),
+        ...rateArgs,
+        '-vf', vf,
+        ...audioEncodeArgs(ENCODING_BUDGETS.mpegtsRemuxAudio, audioProfile),
+      ]
+    }
     default:
       if (options.unknownProfile === 'throw') throw new Error(`Unknown profile: ${profile}`)
       return [...streamMapArgs(streamMap), '-c', 'copy']

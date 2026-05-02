@@ -158,7 +158,7 @@ export default function DashboardClient({ initialPlaylists, favorites: initialFa
                 </div>
                 <div className="flex gap-2 shrink-0">
                   <Link href={`/playlists/${p.id}`} className="text-sm px-3 py-1.5 rounded bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors">
-                    Edit
+                    Edit Playlist
                   </Link>
                   <Link href={`/playlists/${p.id}/settings`} className="text-sm px-3 py-1.5 rounded bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors">
                     Settings
