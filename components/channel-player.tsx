@@ -3,7 +3,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { useEffect, useRef, useState } from 'react'
 import type Mpegts from 'mpegts.js'
-import { normalizePlaybackProfile, type PlaybackProfile } from '@/lib/playback-profile'
+import { normalizePlaybackProfile, PROXY_PROFILES, type PlaybackProfile } from '@/lib/playback-profile'
 
 interface Props {
   url: string
@@ -47,32 +47,12 @@ const BACKENDS = [
   { value: 'cpu', label: 'Force CPU' },
 ]
 
-const PROFILES = [
-  { value: 'proxy', label: 'Proxy Passthrough' },
-  { value: 'stable_mpegts', label: 'MPEG-TS Remux' },
-  { value: 'transcode_720p', label: 'Compatibility 720p' },
-  { value: 'transcode_1080p', label: 'Compatibility 1080p' },
-  { value: 'repair_1080p', label: 'Repair 1080p' },
-  { value: 'smooth_720p60', label: 'Deinterlace 720p60' },
-  { value: 'smooth_1080p60', label: 'Deinterlace 1080p60' },
-] as const
-
-const PLAYBACK_PROFILE_LABELS: Record<string, string> = {
-  direct: 'Direct',
-  proxy: 'Proxy passthrough',
-  stable_mpegts: 'MPEG-TS remux',
-  transcode_720p: 'Compatibility 720p',
-  transcode_1080p: 'Compatibility 1080p',
-  repair_1080p: 'Repair 1080p',
-  smooth_720p60: 'Deinterlace 720p60',
-  smooth_1080p60: 'Deinterlace 1080p60',
-}
-
 function playbackModeLabel(playbackProfile: string | null | undefined, proxyStreams: boolean | undefined) {
   const profile = playbackProfile || (proxyStreams ? 'proxy' : 'direct')
   if (profile === 'direct' && proxyStreams) return 'Proxy: Proxy passthrough'
   if (profile === 'direct') return 'Direct'
-  return `Proxy: ${PLAYBACK_PROFILE_LABELS[profile] ?? profile}`
+  const label = PROXY_PROFILES.find(p => p.value === profile)?.label ?? profile
+  return `Proxy: ${label}`
 }
 
 function isBenignMediaAbort(reason: unknown) {
@@ -121,6 +101,7 @@ export default function ChannelPlayer({ url, title, channelId, playlistId, buffe
   const [streamUrl, setStreamUrl] = useState(url)
   const [playbackStats, setPlaybackStats] = useState<PlaybackStats>({ width: null, height: null, fps: null })
   const [transcodeStats, setTranscodeStats] = useState<TranscodeStats | null>(null)
+  const [reconnectMessage, setReconnectMessage] = useState<string | null>(null)
   const [isStoppingTranscode, setIsStoppingTranscode] = useState(false)
   const [transcodeStopped, setTranscodeStopped] = useState(false)
   const playerRef = useRef<Mpegts.Player | null>(null)
@@ -275,14 +256,26 @@ export default function ChannelPlayer({ url, title, channelId, playlistId, buffe
     }
 
     if (playerRef.current) {
-      playerRef.current.destroy()
+      try {
+        playerRef.current.unload()
+      } catch {
+        // Ignore teardown races inside mpegts.js.
+      }
+      try {
+        playerRef.current.detachMediaElement()
+      } catch {
+        // Ignore teardown races inside mpegts.js.
+      }
+      try {
+        playerRef.current.destroy()
+      } catch {
+        // Ignore teardown races inside mpegts.js.
+      }
       playerRef.current = null
     }
 
     if (videoRef.current) {
       videoRef.current.pause()
-      videoRef.current.removeAttribute('src')
-      videoRef.current.load()
     }
 
     setTranscodeStats(null)
@@ -342,6 +335,7 @@ export default function ChannelPlayer({ url, title, channelId, playlistId, buffe
     transcodeStopRequestedRef.current = false
     setTranscodeStopped(false)
     setError(null)
+    setReconnectMessage(null)
     setPlaybackStats({ width: null, height: null, fps: null })
     frameStatsRef.current = { frames: 0, startedAt: 0 }
     retryCountRef.current = 0
@@ -354,6 +348,16 @@ export default function ChannelPlayer({ url, title, channelId, playlistId, buffe
         width: media.videoWidth || null,
         height: media.videoHeight || null,
       }))
+    }
+
+    function clearReconnectMessage() {
+      setReconnectMessage(null)
+    }
+
+    function suppressStartupStallJump(event: Event) {
+      if (media.currentTime < 1 && media.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
+        event.stopImmediatePropagation()
+      }
     }
 
     function updateFrameRate(now: DOMHighResTimeStamp) {
@@ -375,6 +379,9 @@ export default function ChannelPlayer({ url, title, channelId, playlistId, buffe
     }
 
     media.addEventListener('loadedmetadata', updateResolution)
+    media.addEventListener('loadedmetadata', clearReconnectMessage)
+    media.addEventListener('progress', suppressStartupStallJump, true)
+    media.addEventListener('stalled', suppressStartupStallJump, true)
     media.addEventListener('resize', updateResolution)
     if ('requestVideoFrameCallback' in media) {
       frameCallbackId = media.requestVideoFrameCallback(updateFrameRate)
@@ -382,7 +389,7 @@ export default function ChannelPlayer({ url, title, channelId, playlistId, buffe
 
     function scheduleReconnect(message: string) {
       if (transcodeStopRequestedRef.current) return
-      setError(message)
+      setReconnectMessage(message)
       if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current)
       reconnectTimerRef.current = setTimeout(() => {
         retryCountRef.current += 1
@@ -407,7 +414,7 @@ export default function ChannelPlayer({ url, title, channelId, playlistId, buffe
         isLive: true,
         url: toBrowserAbsoluteUrl(streamUrl),
       }, {
-        enableWorker: true,
+        enableWorker: false,
         enableStashBuffer: true,
         stashInitialSize: mpegtsStashSize(bufferSize),
         lazyLoad: false,
@@ -457,6 +464,9 @@ export default function ChannelPlayer({ url, title, channelId, playlistId, buffe
     return () => {
       cancelled = true
       media.removeEventListener('loadedmetadata', updateResolution)
+      media.removeEventListener('loadedmetadata', clearReconnectMessage)
+      media.removeEventListener('progress', suppressStartupStallJump, true)
+      media.removeEventListener('stalled', suppressStartupStallJump, true)
       media.removeEventListener('resize', updateResolution)
       if (frameCallbackId !== null && 'cancelVideoFrameCallback' in media) {
         media.cancelVideoFrameCallback(frameCallbackId)
@@ -466,10 +476,23 @@ export default function ChannelPlayer({ url, title, channelId, playlistId, buffe
         reconnectTimerRef.current = null
       }
       if (playerRef.current) {
-        playerRef.current.destroy()
+        try {
+          playerRef.current.unload()
+        } catch {
+          // Ignore teardown races inside mpegts.js.
+        }
+        try {
+          playerRef.current.detachMediaElement()
+        } catch {
+          // Ignore teardown races inside mpegts.js.
+        }
+        try {
+          playerRef.current.destroy()
+        } catch {
+          // Ignore teardown races inside mpegts.js.
+        }
         playerRef.current = null
       }
-      media.removeAttribute('src')
     }
   }, [streamUrl, bufferSize, channelId])
 
@@ -521,7 +544,7 @@ export default function ChannelPlayer({ url, title, channelId, playlistId, buffe
                 <div>
                   <label className="block text-[10px] uppercase font-bold text-gray-500 mb-2 tracking-wider">Playback Profile</label>
                   <div className="grid grid-cols-1 gap-1 max-h-48 overflow-y-auto pr-1">
-                    {PROFILES.map(p => (
+                    {PROXY_PROFILES.map(p => (
                       <button
                         key={p.value}
                         onClick={() => updateSettings(p.value)}
@@ -533,7 +556,7 @@ export default function ChannelPlayer({ url, title, channelId, playlistId, buffe
                   </div>
                 </div>
 
-                {activeProfile !== 'proxy' && activeProfile !== 'stable_mpegts' && (
+                {isTranscodedStream && !PROXY_PROFILES.find(p => p.value === activeProfile)?.cpuOnly && (
                   <div className="pt-3 border-t border-gray-800">
                     <label className="block text-[10px] uppercase font-bold text-gray-500 mb-2 tracking-wider">Hardware Backend</label>
                     <div className="grid grid-cols-1 gap-1">
@@ -611,14 +634,21 @@ export default function ChannelPlayer({ url, title, channelId, playlistId, buffe
             <button onClick={() => window.location.reload()} className="mt-4 px-3 py-1.5 bg-gray-800 hover:bg-gray-700 rounded text-xs transition-colors">Retry</button>
           </div>
         ) : (
-          <video
-            data-testid="channel-video"
-            ref={videoRef}
-            className="w-full h-full object-contain"
-            controls
-            autoPlay
-            playsInline
-          />
+          <>
+            <video
+              data-testid="channel-video"
+              ref={videoRef}
+              className="w-full h-full object-contain"
+              controls
+              autoPlay
+              playsInline
+            />
+            {reconnectMessage && (
+              <div className="pointer-events-none absolute bottom-4 left-1/2 -translate-x-1/2 rounded bg-black/75 px-3 py-2 text-xs text-white shadow-lg">
+                {reconnectMessage}
+              </div>
+            )}
+          </>
         )}
       </div>
 

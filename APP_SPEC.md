@@ -245,7 +245,7 @@ Global settings page for:
 |---|---|---|
 | `GET` | `/api/output/[id]/m3u` | serve filtered playlist by numeric id or slug |
 | `GET` | `/api/output/[id]/xml` | serve filtered XMLTV by numeric id or slug |
-| `GET` | `/api/stream/[channelId]` | transcode and stream a channel as MPEG-TS for the web player |
+| `GET` | `/api/stream/[channelId]` | proxy or remux a channel as MPEG-TS for the web player |
 | `GET` | `/api/stream/segment` | proxy rewritten HLS segment requests |
 | `GET` | `/api/proxy/logo` | image proxy for channel logos |
 
@@ -345,8 +345,8 @@ The response uses:
 
 When stream proxying is enabled for a playlist:
 1. The output M3U emits local stream proxy URLs.
-2. For the built-in web player, the stream is transcoded to MPEG-TS on-the-fly via FFmpeg.
-3. The transcoded data is piped directly to the HTTP response, providing ultra-low latency playback via `mpegts.js`.
+2. For the built-in web player, server playback can proxy the source stream or remux it to MPEG-TS on-the-fly via FFmpeg.
+3. The MPEG-TS data is piped directly to the HTTP response, providing ultra-low latency playback via `mpegts.js`.
 4. Disconnecting the client (aborting the HTTP request) automatically terminates the underlying FFmpeg process.
 5. Success and error events are written to `refresh_log` with type `stream`.
 
@@ -358,7 +358,7 @@ The built-in channel player uses **mpegts.js** for high-performance, low-latency
 
 1. **Protocol:** MPEG-TS over HTTP (Piped Stream).
 2. **Latency:** Tuned for a small live buffer rather than segmented HLS output.
-3. **Capabilities:** Supports all server-side transcoding profiles (720p, 1080p, Deinterlace, etc.).
+3. **Capabilities:** Supports server-side proxy passthrough and MPEG-TS remuxing.
 4. **Browser Support:** Requires Media Source Extensions (MSE).
 
 ---

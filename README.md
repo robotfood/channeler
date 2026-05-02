@@ -32,7 +32,7 @@ Open [http://localhost:3000](http://localhost:3000).
 
 If stream proxying is enabled and clients need to reach this app on your LAN or through a reverse proxy, set `PUBLIC_BASE_URL` to the externally reachable base URL so generated proxy stream URLs use the correct address.
 
-Server playback profiles that remux or transcode streams require FFmpeg. The Docker image uses a Debian slim runtime with FFmpeg plus Intel media packages for VAAPI/QSV. If you run the app outside Docker, install FFmpeg and make sure `ffmpeg` is on `PATH`, or set `FFMPEG_PATH=/path/to/ffmpeg`. Hardware profiles use each playlist's Hardware Backend setting: `auto`, `vaapi`, `qsv`, `videotoolbox`, or `cpu`. Intel Linux/Unraid containers should usually use `auto` or `vaapi` with `/dev/dri` passed through. On Apple hardware, use `videotoolbox`; FFmpeg exposes Apple hardware H.264 through VideoToolbox rather than a separate Metal encoder.
+Server playback profiles that remux streams require FFmpeg. The Docker image uses a Debian slim runtime with FFmpeg. If you run the app outside Docker, install FFmpeg and make sure `ffmpeg` is on `PATH`, or set `FFMPEG_PATH=/path/to/ffmpeg`.
 
 For Intel QSV in Docker/Unraid, pass the render device into the container:
 
@@ -61,15 +61,10 @@ Playback profiles control whether clients receive the original stream, a proxied
 | Direct source | Sends clients to the provider URL directly | Low | None | None | Lowest latency and no server work |
 | Proxy passthrough | Proxies the original stream through Channeler | Low | Very low | None | VPN routing, hiding provider URL, connection sharing |
 | MPEG-TS remux | Uses FFmpeg to repackage into continuous MPEG-TS | Low | Low | None | Better compatibility with minimal quality loss |
-| Compatibility 720p | Encodes H.264/AAC at 720p | Low | Low to medium | Backend-dependent | Weak clients, lower bandwidth, normalizing odd streams |
-| Compatibility 1080p | Encodes H.264/AAC at 1080p | Low | Medium | Backend-dependent | Client compatibility at higher resolution |
-| Repair 1080p | Deinterlaces, lightly denoises, sharpens, up to 1080p | Low | High | Backend-dependent | Rough, noisy, or soft low-bitrate channels |
-| Deinterlace 720p60 | Converts field motion to 60 fps at 720p | Low | High | Low to medium | True interlaced sports/news feeds where field-rate motion matters |
-| Deinterlace 1080p60 | Heavy deinterlace for true 1080i feeds | Low | Very high | Medium to high | Only for stable high-bitrate 1080i feeds on capable servers |
 
 The built-in web player uses **mpegts.js** to stream directly from server-side FFmpeg pipes. This provides "instant" channel switching with sub-2 second latency. Unlike traditional HLS, there is no segmented disk cache; the video data is streamed directly to your browser as it is generated.
 
-Audio processing is separate from the video profile. None re-encodes audio to AAC for compatibility without volume normalization or upmixing. Standard AAC adds a light normalization pass while preserving the source channel layout. Surround 5.1 applies stronger dynamic normalization and a conservative stereo-to-5.1 upmix. Aggressive 5.1 pushes stereo harder into a 5.1 field using FFmpeg's `surround` filter; use it only when you want that processed sound.
+Audio processing is separate from the video profile. None re-encodes audio to 256k AAC for compatibility without volume normalization or upmixing. AAC + level normalize adds a light normalization pass while preserving the source channel layout. Stereo to 5.1 applies stronger dynamic normalization and a conservative stereo-to-5.1 upmix at higher bitrate. Aggressive stereo to 5.1 pushes stereo harder into a 5.1 field using FFmpeg's `surround` filter; use the 5.1 modes only when you want processed upmixing for stereo sources.
 
 ## Data storage
 
@@ -142,7 +137,7 @@ Use these tests when changing stream proxying, FFmpeg args, playback profiles, a
 
 | Test | Command | What it proves |
 |---|---|---|
-| FFmpeg transcode smoke | `npm run test:transcode` | FFmpeg can generate MPEG-TS output for the configured profiles/backends |
+| FFmpeg remux smoke | `npm run test:transcode` | FFmpeg can generate MPEG-TS output for the configured profiles/backends |
 | Browser playback E2E | `npm run test:playback` | Chromium + mpegts.js can actually play the generated stream |
 | Xtream import integration | `npm run test:xtream` | A real Xtream provider can be imported into a temp database |
 
@@ -177,7 +172,7 @@ npm run test:playback -- --audio-profile=surround_5_1
 npm run test:playback -- --audio-profile=surround_5_1_aggressive
 ```
 
-Use `-- --all` on the transcode or playback tests to include heavier profiles such as 4K and 1080p60. Browser playback tests need outbound access to `https://skynewsau-live.akamaized.net/hls/live/2002689/skynewsau-extra1/master.m3u8` and local loopback ports for the temporary Next app.
+Browser playback tests need outbound access to `https://skynewsau-live.akamaized.net/hls/live/2002689/skynewsau-extra1/master.m3u8` and local loopback ports for the temporary Next app.
 
 ### Transcode profile smoke test
 
@@ -187,10 +182,10 @@ Run the real FFmpeg profile test on the machine or container that will do transc
 npm run test:transcode
 ```
 
-The test uses synthetic video/audio, validates MPEG-TS stdout for each playback profile, and reports pass/fail/skip for hardware backends. By default it skips the slowest 4K and 1080p60 checks. Use `-- --all` to include them:
+The test uses synthetic video/audio, validates MPEG-TS stdout for each playback profile, and reports pass/fail/skip for hardware backends.
 
 ```bash
-npm run test:transcode -- --all
+npm run test:transcode
 ```
 
 Useful options:
@@ -198,7 +193,7 @@ Useful options:
 | Option / env var | Example | Description |
 |---|---|---|
 | `--backends=` / `TRANSCODE_TEST_BACKENDS` | `qsv,videotoolbox,cpu` | Limit hardware backend combinations |
-| `--profiles=` / `TRANSCODE_TEST_PROFILES` | `transcode_720p,smooth_720p60` | Limit playback profiles |
+| `--profiles=` / `TRANSCODE_TEST_PROFILES` | `stable_mpegts` | Limit playback profiles |
 | `--audio-profile=` / `TRANSCODE_TEST_AUDIO_PROFILE` | `surround_5_1_aggressive` | Test no processing, light normalization, or either 5.1 audio processing mode |
 | `--keep-output` | | Keep temporary test output under `/tmp` for inspection |
 | `FFMPEG_PATH` | `/usr/local/bin/ffmpeg` | Test a specific FFmpeg binary |
@@ -220,10 +215,9 @@ Useful options:
 
 | Option / env var | Example | Description |
 |---|---|---|
-| `--profiles=` / `PLAYBACK_TEST_PROFILES` | `transcode_720p,smooth_720p60` | Limit playback profiles |
+| `--profiles=` / `PLAYBACK_TEST_PROFILES` | `stable_mpegts` | Limit playback profiles |
 | `--backend=` / `PLAYBACK_TEST_BACKEND` | `videotoolbox` | Test a specific backend. Defaults to `cpu` |
 | `--audio-profile=` / `PLAYBACK_TEST_AUDIO_PROFILE` | `surround_5_1_aggressive` | Test no processing, light normalization, or either 5.1 mode |
-| `--all` | | Include heavier profiles such as 1080p60 |
 | `--headed` | | Show the browser while testing |
 | `--keep-output` | | Keep temp DB, HLS cache, and artifacts |
 | `--report-dir=` | `test-results/playback-e2e-...` | Write screenshots and `index.html` to a specific report directory |

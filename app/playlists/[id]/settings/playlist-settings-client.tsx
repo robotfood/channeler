@@ -1,10 +1,11 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import type { PlaylistSettingsData } from '@/lib/app-data'
-import { normalizePlaybackProfile } from '@/lib/playback-profile'
+import { normalizePlaybackProfile, PROXY_PROFILES, type ProxyProfileMeta } from '@/lib/playback-profile'
+import { AUDIO_PROFILE_DEFS, normalizeAudioProfile } from '@/lib/audio-profile'
 
 type PlaylistSettings = PlaylistSettingsData
 
@@ -30,98 +31,8 @@ const INTERVALS = [
   { label: '7 days', value: '168' },
 ]
 
-const PLAYBACK_PROFILES = [
-  {
-    value: 'proxy',
-    label: 'Proxy passthrough',
-    detail: 'Routes the original stream through this server without changing video quality. Ideal buffer: medium.',
-    fps: 'Source',
-    res: 'Source',
-    quality: 'No changes',
-  },
-  {
-    value: 'stable_mpegts',
-    label: 'MPEG-TS remux',
-    detail: 'Repackages the source into a continuous MPEG-TS stream without re-encoding. Ideal buffer: large.',
-    fps: 'Source',
-    res: 'Source',
-    quality: 'No changes',
-  },
-  {
-    value: 'transcode_720p',
-    label: 'Compatibility 720p',
-    detail: 'Converts to H.264 MPEG-TS and caps video at 720p for broad device support and lower bandwidth.',
-    fps: 'Source',
-    res: 'Max 720p',
-    quality: 'Compatibility',
-  },
-  {
-    value: 'transcode_1080p',
-    label: 'Compatibility 1080p',
-    detail: 'Converts to H.264 MPEG-TS and caps video at 1080p while preserving source frame rate.',
-    fps: 'Source',
-    res: 'Max 1080p',
-    quality: 'Compatibility',
-  },
-  {
-    value: 'repair_1080p',
-    label: 'Repair 1080p',
-    detail: 'Deinterlaces, lightly denoises, and sharpens rough or low-bitrate feeds at up to 1080p.',
-    fps: 'Source',
-    res: 'Max 1080p',
-    quality: 'Repair',
-  },
-  {
-    value: 'smooth_720p60',
-    label: 'Deinterlace 720p60',
-    detail: 'Turns interlaced field motion into 60 fps output at 720p. Best for true interlaced sports/news feeds.',
-    fps: '60',
-    res: '720p',
-    quality: 'Field-rate deinterlace',
-  },
-  {
-    value: 'smooth_1080p60',
-    label: 'Deinterlace 1080p60',
-    detail: 'Heavy profile for true 1080i feeds only. Requires strong CPU/GPU headroom and may stall weaker servers.',
-    fps: '60',
-    res: '1080p',
-    quality: 'Heavy field-rate deinterlace',
-  },
-] as const
+type PlaybackProfileValue = ProxyProfileMeta['value']
 
-type PlaybackProfileValue = typeof PLAYBACK_PROFILES[number]['value']
-
-const TRANSCODE_BACKENDS = [
-  { name: 'auto', detail: 'Runs short FFmpeg test encodes and uses the first working hardware backend, then CPU if none pass.' },
-  { name: 'vaapi', detail: 'Uses Linux VAAPI through FFmpeg h264_vaapi. Best first choice for Intel iGPU Docker/Unraid hosts.' },
-  { name: 'qsv', detail: 'Uses Intel Quick Sync through FFmpeg h264_qsv. Best for Intel iGPU servers with /dev/dri access.' },
-  { name: 'amf', detail: 'Uses AMD hardware encoding through FFmpeg h264_amf when the host exposes a supported AMD GPU.' },
-  { name: 'videotoolbox', detail: 'Uses Apple hardware encoding through FFmpeg h264_videotoolbox on macOS.' },
-  { name: 'cpu', detail: 'Forces libx264 software encoding. Most compatible, but uses the most CPU.' },
-]
-
-const AUDIO_PROFILES = [
-  {
-    value: 'none',
-    label: 'None',
-    detail: 'Re-encodes audio to AAC for compatibility without volume normalization, upmixing, or other audio filters.',
-  },
-  {
-    value: 'standard',
-    label: 'Standard AAC + light normalization',
-    detail: 'Re-encodes audio to AAC with a light volume normalization pass while preserving the source channel layout.',
-  },
-  {
-    value: 'surround_5_1',
-    label: 'Surround 5.1',
-    detail: 'Applies stronger volume normalization and a conservative stereo-to-5.1 upmix. Subjective and higher bitrate.',
-  },
-  {
-    value: 'surround_5_1_aggressive',
-    label: 'Aggressive 5.1',
-    detail: 'Pushes stereo harder into the surround field with extra focus, LFE routing, and output gain. Most processed option.',
-  },
-] as const
 
 export default function PlaylistSettingsClient({ initialData, playlistId }: {
   initialData: PlaylistSettings & { log: RefreshLogEntry[] }
@@ -143,8 +54,8 @@ export default function PlaylistSettingsClient({ initialData, playlistId }: {
   const [m3uRefreshInterval, setM3uRefreshInterval] = useState(initialData.m3uRefreshInterval ?? 24)
   const [epgRefreshInterval, setEpgRefreshInterval] = useState(initialData.epgRefreshInterval ?? 24)
   const [bufferSize, setBufferSize] = useState(initialData.bufferSize ?? 'medium')
-  const [transcodeBackend, setTranscodeBackend] = useState(initialData.transcodeBackend ?? 'auto')
-  const [audioProfile, setAudioProfile] = useState(initialData.audioProfile ?? 'none')
+  const transcodeBackend = initialData.transcodeBackend ?? 'auto'
+  const [audioProfile, setAudioProfile] = useState(normalizeAudioProfile(initialData.audioProfile))
   const [playbackProfile, setPlaybackProfile] = useState(initialPlaybackProfile)
   const [proxyProfile, setProxyProfile] = useState<PlaybackProfileValue>(
     initialPlaybackProfile === 'direct' ? 'proxy' : initialPlaybackProfile as PlaybackProfileValue
@@ -152,30 +63,6 @@ export default function PlaylistSettingsClient({ initialData, playlistId }: {
   const [proxyEpg, setProxyEpg] = useState(initialData.proxyEpg)
   const [saving, setSaving] = useState(false)
   const [toast, setToast] = useState('')
-  const [systemInfo, setSystemInfo] = useState<{
-    cpuCores: number
-    threading: string | number
-    backend: string
-    encoder: string
-  } | null>(null)
-
-  useEffect(() => {
-    async function fetchSystemInfo() {
-      try {
-        const res = await fetch('/api/transcode/status')
-        if (res.ok) {
-          const data = await res.json()
-          setSystemInfo({
-            cpuCores: data.recommendedBackend.cpuCores,
-            threading: data.recommendedBackend.threading,
-            backend: data.recommendedBackend.backend,
-            encoder: data.recommendedBackend.encoder,
-          })
-        }
-      } catch {}
-    }
-    fetchSystemInfo()
-  }, [])
 
   const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(''), 3000) }
   const useProxyPlayback = playbackProfile !== 'direct'
@@ -355,31 +242,9 @@ export default function PlaylistSettingsClient({ initialData, playlistId }: {
 
           {useProxyPlayback && (
             <div className="space-y-3">
-              <div className="flex flex-col gap-1 p-3 bg-blue-50/50 dark:bg-blue-900/10 border border-blue-100 dark:border-blue-900/30 rounded-lg">
-                <label htmlFor="transcodeBackend" className="text-xs font-semibold uppercase tracking-wider text-blue-600 dark:text-blue-400">Global Transcode Backend</label>
-                <select id="transcodeBackend" value={transcodeBackend} onChange={e => setTranscodeBackend(e.target.value)}
-                  className="w-full max-w-[260px] bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded px-2 py-1 text-sm focus:outline-none focus:border-blue-500 mt-1">
-                  <option value="auto">Auto detect (Recommended)</option>
-                  <option value="vaapi">Linux VAAPI</option>
-                  <option value="qsv">Intel QSV</option>
-                  <option value="amf">AMD AMF</option>
-                  <option value="videotoolbox">Apple VideoToolbox</option>
-                  <option value="cpu">Force CPU fallback</option>
-                </select>
-                <p className="text-[10px] text-gray-500 dark:text-gray-400 mt-1">Controls how video is encoded for ALL profiles below. Auto validates hardware and falls back to CPU if needed.</p>
-                {systemInfo && (
-                  <div className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 p-2 bg-white/50 dark:bg-black/20 rounded border border-blue-100/50 dark:border-blue-900/20 text-[10px] font-mono text-blue-600/80 dark:text-blue-400/80">
-                    <div className="flex justify-between"><span>Cores:</span> <span className="font-bold">{systemInfo.cpuCores}</span></div>
-                    <div className="flex justify-between"><span>Threads:</span> <span className="font-bold">{systemInfo.threading}</span></div>
-                    <div className="flex justify-between"><span>Detected:</span> <span className="font-bold uppercase">{systemInfo.backend}</span></div>
-                    <div className="flex justify-between"><span>Encoder:</span> <span className="font-bold">{systemInfo.encoder}</span></div>
-                  </div>
-                )}
-              </div>
-
               <fieldset className="space-y-2 rounded-lg border border-gray-200 bg-white p-3 dark:border-gray-800 dark:bg-gray-950/30">
                 <legend className="px-1 text-xs font-medium uppercase tracking-wide text-gray-400 dark:text-gray-500">Proxy mode</legend>
-                {PLAYBACK_PROFILES.map(profile => (
+                {PROXY_PROFILES.map(profile => (
                   <label key={profile.value}
                     className={`flex cursor-pointer gap-3 rounded-md border p-3 transition-colors ${playbackProfile === profile.value ? 'border-blue-500 bg-blue-50 dark:bg-blue-950/30' : 'border-gray-200 bg-gray-50 hover:border-gray-300 dark:border-gray-800 dark:bg-gray-900 dark:hover:border-gray-700'}`}>
                     <input type="radio" name="proxyPlaybackProfile" value={profile.value} checked={playbackProfile === profile.value}
@@ -396,23 +261,13 @@ export default function PlaylistSettingsClient({ initialData, playlistId }: {
                     </span>
                   </label>
                 ))}
-                <div className="space-y-1 pt-1 text-[10px] leading-4 text-gray-400 dark:text-gray-500">
-                  <p>Transcode, repair, and 60 FPS modes require FFmpeg. Hardware modes use the backend setting above.</p>
-                  <dl className="grid gap-x-3 gap-y-1 sm:grid-cols-[auto_1fr]">
-                    {TRANSCODE_BACKENDS.map(backend => (
-                      <div key={backend.name} className="contents">
-                        <dt className="font-medium text-gray-500 dark:text-gray-400">{backend.name}</dt>
-                        <dd>{backend.detail}</dd>
-                      </div>
-                    ))}
-                  </dl>
-                </div>
+                <p className="pt-1 text-[10px] leading-4 text-gray-400 dark:text-gray-500">Proxy passthrough keeps the provider stream unchanged. MPEG-TS remux uses FFmpeg to repackage the stream and normalize audio without re-encoding video.</p>
               </fieldset>
 
               <fieldset className="space-y-2 rounded-lg border border-gray-200 bg-white p-3 dark:border-gray-800 dark:bg-gray-950/30">
                 <legend className="px-1 text-xs font-medium uppercase tracking-wide text-gray-400 dark:text-gray-500">Audio processing</legend>
                 <p className="px-1 text-[10px] leading-4 text-gray-400 dark:text-gray-500">These options are separate from the playback profile and only affect encoded output.</p>
-                {AUDIO_PROFILES.map(profile => (
+                {AUDIO_PROFILE_DEFS.map(profile => (
                   <label key={profile.value}
                     className={`flex cursor-pointer gap-3 rounded-md border p-3 transition-colors ${audioProfile === profile.value ? 'border-blue-500 bg-blue-50 dark:bg-blue-950/30' : 'border-gray-200 bg-gray-50 hover:border-gray-300 dark:border-gray-800 dark:bg-gray-900 dark:hover:border-gray-700'}`}>
                     <input type="radio" name="audioProfile" value={profile.value} checked={audioProfile === profile.value}

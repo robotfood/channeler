@@ -114,7 +114,7 @@ Set up a GitHub Actions workflow that triggers on push to `main`:
   - Acceptance criteria:
     - `rg "hls.js|import Hls|new Hls|Hls\\."` finds no application code.
     - `rg "/api/transcode/.+index|index.m3u8|hlsArgs"` finds no internal playback code.
-    - Built-in player uses `mpegts.js` for proxy, remux, and every transcode profile.
+    - Built-in player uses `mpegts.js` for proxy and remux profiles.
     - No browser request is made to `/api/transcode/[channelId]/index.m3u8`.
     - Switching profile/backend kills the old FFmpeg process and starts a new `/api/stream` request.
     - `stable_hls` rows still play through the `stable_mpegts` behavior.
@@ -123,7 +123,7 @@ Set up a GitHub Actions workflow that triggers on push to `main`:
     - Run `npx tsc --noEmit` or `pnpm tsc --noEmit` when pnpm is available.
     - Run `npm run build`.
     - Run updated transcode/playback tests.
-    - Manually verify proxy passthrough, MPEG-TS remux, 720p transcode, 1080p transcode, repair, and smooth profiles in the browser.
+    - Manually verify proxy passthrough and MPEG-TS remux in the browser.
     - Manually test an upstream `.m3u8` provider URL to prove HLS input still works.
     - Watch process list/logs during repeated reconnects to ensure FFmpeg processes do not accumulate.
   - Rollback plan:
@@ -146,13 +146,10 @@ Set up a GitHub Actions workflow that triggers on push to `main`:
 - [x] Add hardware backend selection for Intel QSV and Apple VideoToolbox
 - [x] Add experimental hardware 4K playback profile
 - [ ] Fix Intel QSV probe on Xeon/Unraid Docker when `/dev/dri` is passed through but FFmpeg reports unsupported picture structure/resolution/pixel format and falls back to CPU
-- [ ] Add hardware-accelerated VAAPI transcode mode and host capability checks
-- [ ] Add transcode session dashboard with current process/client health
+- [ ] Add stream session dashboard with current process/client health
 - [ ] Evaluate `node-av` for future in-process media pipelines or managed FFmpeg binary access; keep current child-process FFmpeg path unless it clearly reduces deployment/runtime risk
 
 ## Video filters
 
-- [ ] Replace software `yadif` fallbacks with `bwdif` in deinterlace profiles after validating output and performance
 - [ ] Add a deband/deblock-oriented profile or toggle for noisy, blocky feeds
-- [ ] Add `idet`-based interlace detection/telemetry and avoid deinterlace-heavy paths on progressive sources
 - [ ] Benchmark any scaling or filter tweaks on real feeds before changing defaults

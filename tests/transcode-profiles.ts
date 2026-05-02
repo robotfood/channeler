@@ -53,20 +53,16 @@ function selectedProfiles() {
   if (raw) {
     return raw.split(',').map(value => {
       const normalized = normalizePlaybackProfile(value.trim())
-      if (normalized === 'direct' || normalized === 'proxy') throw new Error(`Unknown transcode profile: ${value.trim()}`)
+      if (normalized === 'direct' || normalized === 'proxy') throw new Error(`Unknown server playback profile: ${value.trim()}`)
       return normalized
     }).filter(Boolean)
   }
 
   const base = [
     'stable_mpegts',
-    'transcode_720p',
-    'transcode_1080p',
-    'repair_1080p',
-    'smooth_720p60',
   ]
 
-  return hasArg('--all') ? [...base, 'smooth_1080p60'] : base
+  return base
 }
 
 function qsvDevicePath() {
@@ -174,7 +170,7 @@ function inputArgs(profile: string, stableInput: string) {
 }
 
 function profileBackends(profile: string, backends: Backend[]) {
-  if (profile === 'stable_mpegts') return ['cpu'] as Backend[]
+  if (profile === 'stable_mpegts' || profile === 'upscale_1080p') return ['cpu'] as Backend[]
   return backends
 }
 
