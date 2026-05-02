@@ -45,3 +45,6 @@ next-env.d.ts
 # private data
 livetv.m3u
 data/
+
+# tool runtime state
+.superpowers/
