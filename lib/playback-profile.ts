@@ -1,7 +1,7 @@
 export const PLAYBACK_PROFILES = [
   'direct',
   'proxy',
-  'stable_hls',
+  'stable_mpegts',
   'transcode_720p',
   'transcode_1080p',
   'repair_1080p',
@@ -21,15 +21,11 @@ const PROFILE_MAPPING: Record<string, PlaybackProfile> = {
   'hardware_smooth_720p60': 'smooth_720p60',
   'hardware_sports_720p60': 'smooth_720p60',
   'sports_720p60': 'smooth_720p60',
+  'stable_hls': 'stable_mpegts',
 }
 
 export function normalizePlaybackProfile(value: string | null | undefined): PlaybackProfile {
   if (!value) return 'direct'
   if (PROFILE_MAPPING[value]) return PROFILE_MAPPING[value]
   return PLAYBACK_PROFILES.includes(value as PlaybackProfile) ? value as PlaybackProfile : 'direct'
-}
-
-export function usesTranscodedHls(profile: string | null | undefined) {
-  const normalized = normalizePlaybackProfile(profile)
-  return normalized !== 'direct' && normalized !== 'proxy'
 }

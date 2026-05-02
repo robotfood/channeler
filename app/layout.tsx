@@ -12,9 +12,11 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
-      <head>
-        {/* Apply saved theme before first paint to avoid flash */}
-        <script dangerouslySetInnerHTML={{ __html: `
+      <body className="bg-gray-50 dark:bg-gray-950 text-gray-900 dark:text-gray-100 min-h-screen">
+        <Script
+          id="theme-and-cast-init"
+          strategy="beforeInteractive"
+          dangerouslySetInnerHTML={{ __html: `
           (function() {
             var t = localStorage.getItem('theme');
             if (t === 'dark') document.documentElement.classList.add('dark');
@@ -29,9 +31,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               });
             }
           };
-        `}} />
-      </head>
-      <body className="bg-gray-50 dark:bg-gray-950 text-gray-900 dark:text-gray-100 min-h-screen">
+        `}}
+        />
         <Script src="https://www.gstatic.com/cv/js/sender/v1/cast_sender.js?loadCastFramework=1" strategy="lazyOnload" />
         <nav className="bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800 px-6 py-3 flex items-center gap-6">
           <Link href="/" className="text-gray-900 dark:text-white font-semibold text-lg tracking-tight">Channeler</Link>

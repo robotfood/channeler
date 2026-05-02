@@ -180,6 +180,7 @@ export default function DashboardClient({ initialPlaylists, favorites: initialFa
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 sm:p-8">
           <div className="relative w-full max-w-4xl aspect-video bg-black rounded-lg overflow-hidden shadow-2xl">
             <ChannelPlayer
+              key={playingChannel.id}
               title={playingChannel.displayName}
               channelId={playingChannel.id}
               playlistId={playingChannel.playlistId}

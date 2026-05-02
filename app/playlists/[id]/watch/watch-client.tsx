@@ -183,6 +183,7 @@ export default function WatchClient({ initialData }: { initialData: PlaylistData
         {playingChannel && (
           <div className="min-h-0 flex flex-col">
             <ChannelPlayer
+              key={playingChannel.id}
               title={playingChannel.displayName}
               channelId={playingChannel.id}
               playlistId={initialData.id}

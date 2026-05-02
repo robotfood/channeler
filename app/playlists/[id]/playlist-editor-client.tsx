@@ -406,6 +406,7 @@ export default function PlaylistEditorClient({ initialData, playlistId }: {
         {playingChannel && (
           <div className="min-h-0 flex flex-col">
             <ChannelPlayer
+              key={playingChannel.id}
               title={playingChannel.displayName}
               channelId={playingChannel.id}
               bufferSize={data.bufferSize}

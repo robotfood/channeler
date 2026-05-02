@@ -11,7 +11,7 @@ Self-hosted web app for managing M3U IPTV playlists. Import playlists from a URL
 - Drag to reorder groups
 - Filtered M3U and EPG served as live proxy URLs for any IPTV player on your network
 - Auto-refresh on a schedule (1h / 6h / 12h / 24h / 7d)
-- Optional server playback profiles for proxying, stable HLS remuxing, and FFmpeg-based transcoding
+- Optional server playback profiles for proxying, MPEG-TS remuxing, and FFmpeg-based transcoding
 - Ultra-low latency web player using `mpegts.js` (0.8s - 1.5s delay)
 - Refresh log showing history of all fetches
 
@@ -54,13 +54,13 @@ docker exec channeler channeler-qsv-check
 
 ## Server playback profiles
 
-Playback profiles control whether clients receive the original stream, a proxied stream, or a server-generated HLS stream. Any mode except Direct routes video through Channeler.
+Playback profiles control whether clients receive the original stream, a proxied stream, or a server-generated MPEG-TS stream. Any mode except Direct routes video through Channeler.
 
 | Profile | What it does | Latency | CPU load | GPU load | Best use |
 |---|---|---|---:|---:|---|
 | Direct source | Sends clients to the provider URL directly | Low | None | None | Lowest latency and no server work |
 | Proxy passthrough | Proxies the original stream through Channeler | Low | Very low | None | VPN routing, hiding provider URL, connection sharing |
-| Stable HLS remux | Uses FFmpeg to repackage into local MPEG-TS | Low | Low | None | Better stability and client compatibility with minimal quality loss |
+| MPEG-TS remux | Uses FFmpeg to repackage into continuous MPEG-TS | Low | Low | None | Better compatibility with minimal quality loss |
 | Compatibility 720p | Encodes H.264/AAC at 720p | Low | Low to medium | Backend-dependent | Weak clients, lower bandwidth, normalizing odd streams |
 | Compatibility 1080p | Encodes H.264/AAC at 1080p | Low | Medium | Backend-dependent | Client compatibility at higher resolution |
 | Repair 1080p | Deinterlaces, lightly denoises, sharpens, up to 1080p | Low | High | Backend-dependent | Rough, noisy, or soft low-bitrate channels |
@@ -142,7 +142,7 @@ Use these tests when changing stream proxying, FFmpeg args, playback profiles, a
 
 | Test | Command | What it proves |
 |---|---|---|
-| FFmpeg transcode smoke | `npm run test:transcode` | FFmpeg can generate HLS files for the configured profiles/backends |
+| FFmpeg transcode smoke | `npm run test:transcode` | FFmpeg can generate MPEG-TS output for the configured profiles/backends |
 | Browser playback E2E | `npm run test:playback` | Chromium + mpegts.js can actually play the generated stream |
 | Xtream import integration | `npm run test:xtream` | A real Xtream provider can be imported into a temp database |
 
@@ -187,7 +187,7 @@ Run the real FFmpeg profile test on the machine or container that will do transc
 npm run test:transcode
 ```
 
-The test uses synthetic video/audio, generates HLS output for each playback profile, and reports pass/fail/skip for hardware backends. By default it skips the slowest 4K and 1080p60 checks. Use `-- --all` to include them:
+The test uses synthetic video/audio, validates MPEG-TS stdout for each playback profile, and reports pass/fail/skip for hardware backends. By default it skips the slowest 4K and 1080p60 checks. Use `-- --all` to include them:
 
 ```bash
 npm run test:transcode -- --all
@@ -200,7 +200,7 @@ Useful options:
 | `--backends=` / `TRANSCODE_TEST_BACKENDS` | `qsv,videotoolbox,cpu` | Limit hardware backend combinations |
 | `--profiles=` / `TRANSCODE_TEST_PROFILES` | `transcode_720p,smooth_720p60` | Limit playback profiles |
 | `--audio-profile=` / `TRANSCODE_TEST_AUDIO_PROFILE` | `surround_5_1_aggressive` | Test no processing, light normalization, or either 5.1 audio processing mode |
-| `--keep-output` | | Keep generated HLS files under `/tmp` for inspection |
+| `--keep-output` | | Keep temporary test output under `/tmp` for inspection |
 | `FFMPEG_PATH` | `/usr/local/bin/ffmpeg` | Test a specific FFmpeg binary |
 | `TRANSCODE_TEST_DURATION` | `8` | Number of seconds of synthetic media per test |
 | `TRANSCODE_TEST_TIMEOUT_MS` | `120000` | Per-profile FFmpeg timeout |

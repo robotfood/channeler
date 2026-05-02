@@ -18,32 +18,60 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ chan
   const [playlist] = await db.select().from(playlists).where(eq(playlists.id, channel.playlistId))
   if (!playlist) return new NextResponse('Playlist not found', { status: 404 })
 
-  const process = spawnMpegtsStream(channel, playlist)
+  const ffmpegProcess = spawnMpegtsStream(channel, playlist)
+
+  let closed = false
 
   const stream = new ReadableStream({
     start(controller) {
-      process.stdout.on('data', (chunk) => controller.enqueue(chunk))
-      process.stdout.on('end', () => controller.close())
-      process.stdout.on('error', (err) => controller.error(err))
+      function close() {
+        if (closed) return
+        closed = true
+        try {
+          controller.close()
+        } catch {
+          // Ignore if the client already disconnected.
+        }
+      }
+
+      req.signal.addEventListener('abort', () => {
+        if (ffmpegProcess.exitCode === null) ffmpegProcess.kill('SIGTERM')
+      }, { once: true })
+
+      ffmpegProcess.stdout.on('data', (chunk) => {
+        if (closed) return
+        try {
+          controller.enqueue(chunk)
+          if ((controller.desiredSize ?? 1) <= 0) ffmpegProcess.stdout.pause()
+        } catch {
+          closed = true
+          if (ffmpegProcess.exitCode === null) ffmpegProcess.kill('SIGTERM')
+        }
+      })
+      ffmpegProcess.stdout.on('end', close)
+      ffmpegProcess.stdout.on('error', (err) => {
+        if (!closed) controller.error(err)
+        closed = true
+      })
       
-      process.stderr.on('data', (chunk) => {
+      ffmpegProcess.stderr.on('data', (chunk) => {
         // Log errors but don't stop the stream unless critical
         const msg = chunk.toString().trim()
         if (msg) console.error(`[stream] channel=${id} ffmpeg: ${msg}`)
       })
 
-      process.on('exit', (code, signal) => {
+      ffmpegProcess.on('exit', (code, signal) => {
         console.log(`[stream] channel=${id} ffmpeg exit code=${code} signal=${signal}`)
-        try {
-          controller.close()
-        } catch {
-          // Ignore if already closed
-        }
+        close()
       })
     },
+    pull() {
+      if (!closed && ffmpegProcess.stdout.isPaused()) ffmpegProcess.stdout.resume()
+    },
     cancel() {
-      console.log(`[stream] channel=${id} client disconnected, killing ffmpeg pid=${process.pid}`)
-      process.kill('SIGTERM')
+      closed = true
+      console.log(`[stream] channel=${id} client disconnected, killing ffmpeg pid=${ffmpegProcess.pid}`)
+      ffmpegProcess.kill('SIGTERM')
     }
   })
 

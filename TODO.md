@@ -20,6 +20,122 @@ Set up a GitHub Actions workflow that triggers on push to `main`:
 
 ## Up Next
 
+- [ ] Completely ditch internal HLS playback and transcode output in favor of one MPEG-TS pipeline.
+  - Decision:
+    - Channeler's built-in web player has exactly one media endpoint: `GET /api/stream/[channelId]`.
+    - `GET /api/stream/[channelId]` always returns a continuous `video/mp2t` MPEG-TS stream.
+    - The browser always plays built-in channels with `mpegts.js`.
+    - HLS/M3U8 remains allowed only as source/input data: provider URLs, uploaded playlists, Xtream output format, and exported M3U content. Channeler does not generate HLS for internal playback.
+  - Non-goals:
+    - Do not remove support for importing `.m3u8` playlists or provider HLS URLs.
+    - Do not remove HLS playlist rewriting in the proxy path unless exported playlist proxying no longer needs it.
+    - Do not solve every unstable-provider stall in this change; MPEG-TS reconnect behavior is best-effort.
+  - Current interrupted-work warning:
+    - Before implementing, inspect `git status --short`.
+    - The aborted migration may have partial edits such as deleted `lib/server-transcode.ts`, deleted `app/api/transcode/[channelId]/[...path]/route.ts`, removed `hls.js`, or renamed `stable_hls`.
+    - Either finish from that state deliberately or restore unrelated partial edits before starting. Do not blindly continue from a half-applied patch.
+  - Phase 1: establish the backend contract without touching the player first.
+    - Make `lib/server-stream.ts` own `spawnMpegtsStream(channel, playlist)`.
+    - `spawnMpegtsStream()` loads normalized playback profile, audio profile, backend recommendation, and FFmpeg path.
+    - Every profile must end with `mpegtsArgs()` and `pipe:1`.
+    - `proxy`/passthrough profile should copy streams where possible.
+    - `stable_mpegts` should remux video with `-c:v copy` and handle audio according to the configured audio profile.
+    - Transcode profiles should reuse existing codec/filter profile args and output MPEG-TS stdout.
+    - Add provider resiliency flags before `-i`: `-reconnect 1`, `-reconnect_streamed 1`, `-reconnect_at_eof 1`, `-reconnect_on_network_error 1`, `-reconnect_on_http_error 4xx,5xx`, `-reconnect_delay_max 5`, and a bounded `-rw_timeout`.
+  - Phase 2: make `/api/stream/[channelId]` production-safe.
+    - Load channel and playlist, spawn FFmpeg, pipe stdout into a `ReadableStream`, return `Content-Type: video/mp2t`.
+    - Kill FFmpeg when `req.signal` aborts, when the stream is cancelled, or when the client disconnects.
+    - Guard against `controller.enqueue()` and `controller.close()` after close.
+    - Log FFmpeg stderr with channel id, profile, backend, pid, and exit status.
+    - Capture enough last-stderr context to show useful playback errors in logs/status.
+    - Avoid overlapping reconnect processes: request abort must terminate the old FFmpeg process before the player starts a new one.
+    - Optional but preferred: track active stream processes per channel/profile/backend so `/api/transcode/status` or a renamed status route can report real process health.
+  - Phase 3: remove HLS output generation.
+    - Remove `hlsArgs()` from `lib/ffmpeg-transcode-args.ts` if no tests still need it.
+    - Rename HLS-specific helpers to container-neutral names:
+      - `h264HlsCompatibilityArgs()` -> `h264AnnexBCompatibilityArgs()` or similar.
+      - `stableHlsAudio` -> `mpegtsRemuxAudio`.
+    - Delete `app/api/transcode/[channelId]/[...path]/route.ts`; no internal route should serve `.m3u8`, `.m4s`, or transcode segment files.
+    - Replace `lib/server-transcode.ts` HLS-session responsibilities with hardware/backend recommendation only, or split that code into `lib/transcode-hardware.ts`.
+    - Remove cache directory/index/segment concepts from internal playback code: no `transcode-cache`, no `index.m3u8`, no `segment_%06d.ts`.
+  - Phase 4: simplify playback URL generation.
+    - Update `lib/stream-url.ts` so server playback profiles resolve to `/api/stream/[channelId]`.
+    - Keep exported M3U behavior explicit:
+      - If playlist proxying is enabled, exported URLs should point at `/api/stream/[channelId]`.
+      - If proxying is disabled and the output is intended to expose source URLs, keep original provider URLs.
+    - Built-in web player should always receive `/api/stream/[channelId]`; avoid passing raw provider URLs into `ChannelPlayer`.
+  - Phase 5: simplify the browser player.
+    - Remove `hls.js` import and every HLS branch from `components/channel-player.tsx`.
+    - Remove `isHlsPlaybackUrl()` and any `.m3u8` browser playback handling.
+    - Keep `toBrowserAbsoluteUrl()` because mpegts worker fetch requires absolute URLs.
+    - Keep one `mpegts.createPlayer()` path.
+    - Use a stability-first default buffer:
+      - `enableStashBuffer: true`
+      - stash size large enough for flaky IPTV, e.g. `384 * 1024` or higher after testing
+      - latency chasing with a few seconds of remain buffer, not sub-second
+    - On error or loading complete, create a fresh `/api/stream/[channelId]?v=<n>` request rather than reusing a dead fetch.
+    - On profile/backend changes, destroy the old player and start a new stream.
+  - Phase 6: profile migration and UI wording.
+    - Add `stable_mpegts` to `PLAYBACK_PROFILES`.
+    - Keep `stable_hls` only as a read compatibility alias in `normalizePlaybackProfile()`.
+    - New writes from settings/player should save `stable_mpegts`, not `stable_hls`.
+    - Update labels:
+      - `Stable HLS remux` -> `MPEG-TS remux`
+      - `Stable HLS` -> `MPEG-TS remux`
+      - `Converts to H.264 HLS` -> `Converts to H.264 MPEG-TS`
+    - Update in-player labels and settings details to avoid implying HLS exists internally.
+  - Phase 7: dependency and route cleanup.
+    - Remove `hls.js` from `package.json` and `package-lock.json`.
+    - Confirm `rg "hls.js|import Hls|new Hls|Hls\\."` returns no app code.
+    - Decide status/stop route names:
+      - Short term: keep `/api/transcode/status` and `/api/transcode/[channelId]/stop` as compatibility wrappers if UI uses them.
+      - Preferred follow-up: rename to `/api/stream/status` and `/api/stream/[channelId]/stop`.
+    - Confirm no code generates `/api/transcode/[channelId]/index.m3u8`.
+  - Phase 8: update tests before declaring done.
+    - `tests/transcode-profiles.ts`:
+      - Stop generating HLS folders.
+      - Spawn FFmpeg with profile args + `mpegtsArgs()`.
+      - Read stdout for a bounded duration/byte count.
+      - Validate output contains MPEG-TS sync bytes (`0x47` packet cadence) and FFmpeg exits or is killed cleanly.
+    - `tests/playback-profiles.ts`:
+      - Assert every profile requests `/api/stream`.
+      - Remove checks for `index.m3u8`, HLS cache files, or `/api/transcode/[channelId]/...`.
+      - Keep external `.m3u8` provider inputs in tests; they are still valid source URLs.
+    - Add one regression test for legacy `stable_hls` normalization to `stable_mpegts`.
+  - Phase 9: documentation.
+    - README:
+      - Internal playback uses continuous MPEG-TS via `mpegts.js`.
+      - HLS provider URLs and `.m3u8` playlist imports are still supported as inputs.
+      - Remove claims that server profiles generate HLS.
+    - APP_SPEC:
+      - Remove internal `/api/transcode/[channelId]/[...path]` playback route.
+      - Document `/api/stream/[channelId]` as universal playback route.
+      - Keep `/api/stream/segment` only if exported HLS-source proxy rewriting still needs it.
+  - Acceptance criteria:
+    - `rg "hls.js|import Hls|new Hls|Hls\\."` finds no application code.
+    - `rg "/api/transcode/.+index|index.m3u8|hlsArgs"` finds no internal playback code.
+    - Built-in player uses `mpegts.js` for proxy, remux, and every transcode profile.
+    - No browser request is made to `/api/transcode/[channelId]/index.m3u8`.
+    - Switching profile/backend kills the old FFmpeg process and starts a new `/api/stream` request.
+    - `stable_hls` rows still play through the `stable_mpegts` behavior.
+  - Verification:
+    - Run `npm run lint`.
+    - Run `npx tsc --noEmit` or `pnpm tsc --noEmit` when pnpm is available.
+    - Run `npm run build`.
+    - Run updated transcode/playback tests.
+    - Manually verify proxy passthrough, MPEG-TS remux, 720p transcode, 1080p transcode, repair, and smooth profiles in the browser.
+    - Manually test an upstream `.m3u8` provider URL to prove HLS input still works.
+    - Watch process list/logs during repeated reconnects to ensure FFmpeg processes do not accumulate.
+  - Rollback plan:
+    - Keep this as one focused branch/commit series.
+    - If MPEG-TS-only proves too unstable, revert player URL generation and restore HLS media route/dependency from git.
+    - Do not migrate database values destructively; compatibility alias makes rollback easier.
+  - Known risks:
+    - A single long MPEG-TS fetch is less resilient than segmented HLS on unstable upstreams.
+    - Reconnects rebuild MSE/player state, so visible pauses are likely on provider stalls.
+    - Chromecast/native devices may support HLS better than raw MPEG-TS; casting behavior must be retested.
+    - Connection limits may be easier to hit if reconnect loops spawn overlapping FFmpeg processes; request abort cleanup must be reliable.
+    - Some provider HLS streams with discontinuities may need FFmpeg flags or timestamp normalization before piping MPEG-TS.
 - [x] Add per-playlist buffer settings (small, medium, large, xl)
 - [x] Add auto-reconnect support in the video player for dropped streams
 - [x] Implement connection multiplexing/sharing to avoid hitting IPTV max connection limits

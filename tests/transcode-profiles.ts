@@ -4,7 +4,7 @@ import os from 'node:os'
 import path from 'node:path'
 import {
   encoderForBackend,
-  hlsArgs,
+  mpegtsArgs,
   profileArgs,
   qsvDeviceArgs as qsvDeviceArgsForDevice,
   TRANSCODE_BACKENDS,
@@ -19,6 +19,7 @@ const DURATION_SECONDS = parseFloat(process.env.TRANSCODE_TEST_DURATION || '5')
 const TEST_TIMEOUT_MS = parseInt(process.env.TRANSCODE_TEST_TIMEOUT_MS || '90000', 10)
 const BACKENDS = TRANSCODE_BACKENDS
 const AUDIO_PROFILE = normalizeAudioProfile(optionValue('--audio-profile') || process.env.TRANSCODE_TEST_AUDIO_PROFILE)
+const backendProbeCache = new Map<Backend, string>()
 
 type Backend = TranscodeBackend
 type Result = {
@@ -58,7 +59,7 @@ function selectedProfiles() {
   }
 
   const base = [
-    'stable_hls',
+    'stable_mpegts',
     'transcode_720p',
     'transcode_1080p',
     'repair_1080p',
@@ -96,6 +97,42 @@ function ffmpegEncoders() {
   }
 }
 
+function probeArgsForBackend(backend: Exclude<Backend, 'cpu'>) {
+  return [
+    '-hide_banner',
+    '-loglevel', 'error',
+    ...(backend === 'vaapi' ? vaapiDeviceArgs() : []),
+    ...(backend === 'qsv' ? qsvDeviceArgs() : []),
+    '-f', 'lavfi',
+    '-i', backend === 'qsv' || backend === 'vaapi' ? 'testsrc2=size=1280x720:rate=30' : 'testsrc2=size=640x360:rate=30',
+    '-frames:v', '10',
+    '-vf', backend === 'vaapi' ? 'format=nv12,hwupload' : backend === 'videotoolbox' ? 'format=yuv420p' : 'format=nv12',
+    '-an',
+    '-c:v', encoderForBackend(backend),
+    ...(backend === 'qsv' ? ['-preset', 'veryfast', '-b:v', '3000k', '-maxrate', '4000k', '-bufsize', '6000k'] : []),
+    ...(backend === 'amf' ? ['-quality', 'speed'] : []),
+    ...(backend === 'vaapi' ? ['-qp', '23'] : []),
+    '-f', 'null',
+    '-',
+  ]
+}
+
+function backendProbeResult(backend: Backend) {
+  if (backend === 'cpu') return 'ok'
+  const cached = backendProbeCache.get(backend)
+  if (cached) return cached
+
+  const result = spawnSync(FFMPEG, probeArgsForBackend(backend), {
+    encoding: 'utf8',
+    timeout: 15000,
+  })
+  const detail = result.status === 0
+    ? 'ok'
+    : (result.stderr || result.stdout || result.error?.message || `${backend} probe failed`).trim().slice(-600)
+  backendProbeCache.set(backend, detail)
+  return detail
+}
+
 function createStableInput(tempDir: string) {
   const inputPath = path.join(tempDir, 'input.ts')
   const result = spawnSync(FFMPEG, [
@@ -120,13 +157,13 @@ function createStableInput(tempDir: string) {
   })
 
   if (result.status !== 0) {
-    throw new Error(`Unable to create stable_hls input: ${(result.stderr || result.stdout || '').trim()}`)
+    throw new Error(`Unable to create stable_mpegts input: ${(result.stderr || result.stdout || '').trim()}`)
   }
   return inputPath
 }
 
 function inputArgs(profile: string, stableInput: string) {
-  if (profile === 'stable_hls') return ['-i', stableInput]
+  if (profile === 'stable_mpegts') return ['-i', stableInput]
   return [
     '-f', 'lavfi',
     '-i', 'testsrc2=size=640x360:rate=24',
@@ -137,19 +174,30 @@ function inputArgs(profile: string, stableInput: string) {
 }
 
 function profileBackends(profile: string, backends: Backend[]) {
-  if (profile === 'stable_hls') return ['cpu'] as Backend[]
+  if (profile === 'stable_mpegts') return ['cpu'] as Backend[]
   return backends
 }
 
-function validateHls(outputDir: string) {
-  const indexPath = path.join(outputDir, 'index.m3u8')
-  if (!fs.existsSync(indexPath)) return 'missing index.m3u8'
+function validateMpegts(output: Buffer) {
+  if (output.length < 188 * 10) return `too little MPEG-TS output: ${output.length} bytes`
 
-  const index = fs.readFileSync(indexPath, 'utf8')
-  if (!index.includes('#EXTM3U') || !index.includes('#EXTINF')) return 'index.m3u8 is not a populated HLS playlist'
+  let bestOffset = -1
+  let bestMatches = 0
+  for (let offset = 0; offset < 188; offset += 1) {
+    let matches = 0
+    for (let pos = offset; pos < output.length; pos += 188) {
+      if (output[pos] === 0x47) matches += 1
+    }
+    if (matches > bestMatches) {
+      bestMatches = matches
+      bestOffset = offset
+    }
+  }
 
-  const segments = fs.readdirSync(outputDir).filter(file => file.endsWith('.ts'))
-  if (segments.length === 0) return 'no .ts segments were created'
+  const expectedPackets = Math.floor((output.length - Math.max(bestOffset, 0)) / 188)
+  if (bestOffset < 0 || bestMatches < Math.max(8, expectedPackets * 0.8)) {
+    return `MPEG-TS sync byte cadence not found (${bestMatches}/${expectedPackets} packets)`
+  }
   return 'ok'
 }
 
@@ -164,9 +212,16 @@ function runProfile(profile: string, backend: Backend, root: string, stableInput
       detail: `${encoder} is not compiled into this FFmpeg`,
     }
   }
-
-  const outputDir = path.join(root, `${profile}-${backend}`)
-  fs.mkdirSync(outputDir, { recursive: true })
+  const backendProbe = backendProbeResult(backend)
+  if (backendProbe !== 'ok') {
+    return {
+      profile,
+      backend,
+      status: 'skip',
+      elapsedMs: 0,
+      detail: backendProbe,
+    }
+  }
 
   const startedAt = Date.now()
   const result = spawnSync(FFMPEG, [
@@ -177,13 +232,14 @@ function runProfile(profile: string, backend: Backend, root: string, stableInput
     ...(backend === 'qsv' ? qsvDeviceArgs() : []),
     ...inputArgs(profile, stableInput),
     ...profileArgs(profile, backend, {
-      audioInputIndex: profile === 'stable_hls' ? 0 : 1,
+      audioInputIndex: profile === 'stable_mpegts' ? 0 : 1,
       audioProfile: AUDIO_PROFILE,
       unknownProfile: 'throw',
     }),
-    ...hlsArgs(outputDir),
+    ...mpegtsArgs(),
   ], {
-    encoding: 'utf8',
+    encoding: 'buffer',
+    maxBuffer: 64 * 1024 * 1024,
     timeout: TEST_TIMEOUT_MS,
   })
   const elapsedMs = Date.now() - startedAt
@@ -204,17 +260,17 @@ function runProfile(profile: string, backend: Backend, root: string, stableInput
       backend,
       status: 'fail',
       elapsedMs,
-      detail: (result.stderr || result.stdout || `FFmpeg exited ${result.status}`).trim().slice(-600),
+      detail: (result.stderr?.toString() || result.stdout?.toString() || `FFmpeg exited ${result.status}`).trim().slice(-600),
     }
   }
 
-  const hlsStatus = validateHls(outputDir)
+  const mpegtsStatus = validateMpegts(result.stdout)
   return {
     profile,
     backend,
-    status: hlsStatus === 'ok' ? 'pass' : 'fail',
+    status: mpegtsStatus === 'ok' ? 'pass' : 'fail',
     elapsedMs,
-    detail: hlsStatus,
+    detail: mpegtsStatus,
   }
 }
 

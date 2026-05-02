@@ -357,7 +357,7 @@ When stream proxying is enabled for a playlist:
 The built-in channel player uses **mpegts.js** for high-performance, low-latency live streaming.
 
 1. **Protocol:** MPEG-TS over HTTP (Piped Stream).
-2. **Latency:** Tuned for 0.8s - 1.5s delay.
+2. **Latency:** Tuned for a small live buffer rather than segmented HLS output.
 3. **Capabilities:** Supports all server-side transcoding profiles (720p, 1080p, Deinterlace, etc.).
 4. **Browser Support:** Requires Media Source Extensions (MSE).
 
@@ -365,7 +365,7 @@ The built-in channel player uses **mpegts.js** for high-performance, low-latency
 
 ## Scheduler Behavior
 
-Proxying is opt-in per playlist. Requests to `/api/stream/[channelId]` return `403` if the playlist does not have proxying enabled.
+The built-in player uses `/api/stream/[channelId]` for MPEG-TS playback profiles. Exported playlists only use this route when stream proxying is enabled.
 
 ---
 
@@ -392,4 +392,3 @@ Current implementation detail:
 - No full XML parser for EPG filtering
 - Per-playlist settings do not currently support replacing the EPG via file upload after creation
 - M3U refresh matching can fall back to `display_name`, which may be imperfect when sources change significantly
-

@@ -19,7 +19,6 @@
     "@types/node-cron": "^3.0.11",
     "drizzle-kit": "^0.31.10",
     "drizzle-orm": "^0.45.2",
-    "hls.js": "^1.6.16",
     "mpegts.js": "^1.8.0",
     "next": "16.2.4",
     "node-cron": "^4.2.1",

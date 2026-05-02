@@ -2,7 +2,7 @@
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { useEffect, useRef, useState } from 'react'
-import mpegts from 'mpegts.js'
+import type Mpegts from 'mpegts.js'
 import { normalizePlaybackProfile, type PlaybackProfile } from '@/lib/playback-profile'
 
 interface Props {
@@ -49,7 +49,7 @@ const BACKENDS = [
 
 const PROFILES = [
   { value: 'proxy', label: 'Proxy Passthrough' },
-  { value: 'stable_hls', label: 'Stable HLS Remux' },
+  { value: 'stable_mpegts', label: 'MPEG-TS Remux' },
   { value: 'transcode_720p', label: 'Compatibility 720p' },
   { value: 'transcode_1080p', label: 'Compatibility 1080p' },
   { value: 'repair_1080p', label: 'Repair 1080p' },
@@ -60,7 +60,7 @@ const PROFILES = [
 const PLAYBACK_PROFILE_LABELS: Record<string, string> = {
   direct: 'Direct',
   proxy: 'Proxy passthrough',
-  stable_hls: 'Stable HLS remux',
+  stable_mpegts: 'MPEG-TS remux',
   transcode_720p: 'Compatibility 720p',
   transcode_1080p: 'Compatibility 1080p',
   repair_1080p: 'Repair 1080p',
@@ -80,6 +80,34 @@ function isBenignMediaAbort(reason: unknown) {
   return message.includes('media resource was aborted by the user agent') || message.includes('aborted by the user agent')
 }
 
+function toBrowserAbsoluteUrl(url: string) {
+  if (typeof window === 'undefined') return url
+  return new URL(url, window.location.origin).toString()
+}
+
+function playbackUrlForProfile(channelId: number) {
+  return `/api/stream/${channelId}`
+}
+
+function cacheBustUrl(url: string, version: number) {
+  if (typeof window === 'undefined') return url
+  const nextUrl = new URL(url, window.location.origin)
+  nextUrl.searchParams.set('v', String(version))
+  return nextUrl.origin === window.location.origin ? `${nextUrl.pathname}${nextUrl.search}` : nextUrl.toString()
+}
+
+function mpegtsStashSize(bufferSize: string) {
+  switch (bufferSize) {
+    case 'small':
+      return 384 * 1024
+    case 'large':
+      return 2 * 1024 * 1024
+    case 'medium':
+    default:
+      return 1024 * 1024
+  }
+}
+
 export default function ChannelPlayer({ url, title, channelId, playlistId, bufferSize = 'medium', playbackProfile, transcodeBackend, proxyStreams, initialFavorite, onClose, onToggleFavorite }: Props) {
   const videoRef = useRef<HTMLVideoElement>(null)
   const [error, setError] = useState<string | null>(null)
@@ -90,19 +118,19 @@ export default function ChannelPlayer({ url, title, channelId, playlistId, buffe
   const [showSettings, setShowSettings] = useState(false)
   const [activeProfile, setActiveProfile] = useState(normalizePlaybackProfile(playbackProfile || 'proxy'))
   const [activeBackend, setActiveBackend] = useState(transcodeBackend || 'auto')
-  const [streamUrl, setStreamUrl] = useState(`/api/stream/${channelId}`)
+  const [streamUrl, setStreamUrl] = useState(url)
   const [playbackStats, setPlaybackStats] = useState<PlaybackStats>({ width: null, height: null, fps: null })
   const [transcodeStats, setTranscodeStats] = useState<TranscodeStats | null>(null)
   const [isStoppingTranscode, setIsStoppingTranscode] = useState(false)
   const [transcodeStopped, setTranscodeStopped] = useState(false)
-  const playerRef = useRef<mpegts.Player | null>(null)
+  const playerRef = useRef<Mpegts.Player | null>(null)
   const retryCountRef = useRef(0)
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const frameStatsRef = useRef({ frames: 0, startedAt: 0 })
   const versionRef = useRef(0)
   const transcodeStopRequestedRef = useRef(false)
   const modeLabel = playbackModeLabel(activeProfile, proxyStreams)
-  const isTranscodedStream = true
+  const isTranscodedStream = activeProfile !== 'direct' && activeProfile !== 'proxy'
 
   useEffect(() => {
     function handleUnhandledRejection(event: PromiseRejectionEvent) {
@@ -148,7 +176,7 @@ export default function ChannelPlayer({ url, title, channelId, playlistId, buffe
         
         if (session) {
           const absoluteUrl = new URL(url, win.location.origin).toString()
-          const mediaInfo = new chrome.cast.media.MediaInfo(absoluteUrl, 'application/x-mpegurl')
+          const mediaInfo = new chrome.cast.media.MediaInfo(absoluteUrl, 'video/mp2t')
           
           const metadata = new chrome.cast.media.GenericMediaMetadata()
           metadata.title = title
@@ -227,7 +255,7 @@ export default function ChannelPlayer({ url, title, channelId, playlistId, buffe
       versionRef.current += 1
       transcodeStopRequestedRef.current = false
       setTranscodeStopped(false)
-      setStreamUrl(`/api/stream/${channelId}?v=${versionRef.current}`)
+      setStreamUrl(cacheBustUrl(playbackUrlForProfile(channelId), versionRef.current))
       setShowSettings(false)
     } catch (err) {
       console.error('Failed to update playlist settings', err)
@@ -318,6 +346,7 @@ export default function ChannelPlayer({ url, title, channelId, playlistId, buffe
     frameStatsRef.current = { frames: 0, startedAt: 0 }
     retryCountRef.current = 0
     let frameCallbackId: number | null = null
+    let cancelled = false
 
     function updateResolution() {
       setPlaybackStats(current => ({
@@ -351,44 +380,82 @@ export default function ChannelPlayer({ url, title, channelId, playlistId, buffe
       frameCallbackId = media.requestVideoFrameCallback(updateFrameRate)
     }
 
-    if (mpegts.getFeatureList().mseLivePlayback) {
+    function scheduleReconnect(message: string) {
+      if (transcodeStopRequestedRef.current) return
+      setError(message)
+      if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current)
+      reconnectTimerRef.current = setTimeout(() => {
+        retryCountRef.current += 1
+        versionRef.current += 1
+        setStreamUrl(current => cacheBustUrl(current, versionRef.current))
+      }, Math.min(1000 * Math.pow(2, retryCountRef.current), 30000))
+    }
+
+    async function startMpegtsPlayer() {
+      const mpegts = (await import('mpegts.js')).default
+      if (cancelled) return
+
+      if (!mpegts.getFeatureList().mseLivePlayback) {
+        setTimeout(() => {
+          if (!cancelled) setError('Your browser does not support MPEG-TS playback (MSE required)')
+        }, 0)
+        return
+      }
+
       const player = mpegts.createPlayer({
         type: 'mpegts',
         isLive: true,
-        url: streamUrl,
+        url: toBrowserAbsoluteUrl(streamUrl),
       }, {
         enableWorker: true,
-        enableStashBuffer: false,
-        stashInitialSize: 128,
-        liveBufferLatencyChasing: true,
-        liveBufferLatencyMaxLatency: 1.5,
-        liveBufferLatencyMinLatency: 0.8,
+        enableStashBuffer: true,
+        stashInitialSize: mpegtsStashSize(bufferSize),
+        lazyLoad: false,
+        liveBufferLatencyChasing: false,
+        liveSync: false,
+        autoCleanupSourceBuffer: true,
+        autoCleanupMaxBackwardDuration: 90,
+        autoCleanupMinBackwardDuration: 30,
+        fixAudioTimestampGap: true,
       })
+      if (cancelled) {
+        player.destroy()
+        return
+      }
+
       playerRef.current = player
       player.attachMediaElement(media)
       player.load()
-      player.play().catch(err => {
-        if (!isBenignMediaAbort(err)) console.error('mpegts play error', err)
-      })
+      const playResult = player.play()
+      if (playResult) {
+        playResult.catch((err: unknown) => {
+          if (!isBenignMediaAbort(err)) console.error('mpegts play error', err)
+        })
+      }
 
       player.on(mpegts.Events.ERROR, (type, detail) => {
-        if (transcodeStopRequestedRef.current) return
-        setError(`Playback error: ${type} - ${detail}`)
-        
-        // Attempt auto-reconnect
-        if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current)
-        reconnectTimerRef.current = setTimeout(() => {
-          retryCountRef.current += 1
-          player.unload()
-          player.load()
-          player.play()
-        }, Math.min(1000 * Math.pow(2, retryCountRef.current), 30000))
+        scheduleReconnect(`Playback error: ${type} - ${detail}. Reconnecting...`)
       })
-    } else {
-      setTimeout(() => setError('Your browser does not support MPEG-TS playback (MSE required)'), 0)
+
+      player.on(mpegts.Events.LOADING_COMPLETE, () => {
+        scheduleReconnect('Stream ended. Reconnecting...')
+      })
+
+      player.on(mpegts.Events.RECOVERED_EARLY_EOF, () => {
+        console.info('mpegts recovered early EOF')
+      })
+
+      player.on(mpegts.Events.STATISTICS_INFO, (stats) => {
+        if (stats.speed && stats.speed < 0.9) {
+          console.warn('mpegts low download speed', stats)
+        }
+      })
     }
 
+    void startMpegtsPlayer()
+
     return () => {
+      cancelled = true
       media.removeEventListener('loadedmetadata', updateResolution)
       media.removeEventListener('resize', updateResolution)
       if (frameCallbackId !== null && 'cancelVideoFrameCallback' in media) {
@@ -402,8 +469,9 @@ export default function ChannelPlayer({ url, title, channelId, playlistId, buffe
         playerRef.current.destroy()
         playerRef.current = null
       }
+      media.removeAttribute('src')
     }
-  }, [streamUrl, bufferSize])
+  }, [streamUrl, bufferSize, channelId])
 
   return (
     <div className="flex flex-col h-full bg-black text-white overflow-hidden rounded-lg shadow-xl border border-gray-800">
@@ -465,7 +533,7 @@ export default function ChannelPlayer({ url, title, channelId, playlistId, buffe
                   </div>
                 </div>
 
-                {activeProfile !== 'proxy' && activeProfile !== 'stable_hls' && (
+                {activeProfile !== 'proxy' && activeProfile !== 'stable_mpegts' && (
                   <div className="pt-3 border-t border-gray-800">
                     <label className="block text-[10px] uppercase font-bold text-gray-500 mb-2 tracking-wider">Hardware Backend</label>
                     <div className="grid grid-cols-1 gap-1">

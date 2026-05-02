@@ -1,4 +1,4 @@
-import { spawn, spawnSync } from 'node:child_process'
+import { spawn } from 'node:child_process'
 import fs from 'node:fs'
 import net from 'node:net'
 import os from 'node:os'
@@ -7,7 +7,6 @@ import { chromium, type Browser, type Page } from 'playwright'
 import { normalizeAudioProfile } from '../lib/audio-profile'
 import { normalizePlaybackProfile } from '../lib/playback-profile'
 
-const FFMPEG = process.env.FFMPEG_PATH || 'ffmpeg'
 const TEST_TIMEOUT_MS = parseInt(process.env.PLAYBACK_TEST_TIMEOUT_MS || '45000', 10)
 const STARTUP_TIMEOUT_MS = parseInt(process.env.PLAYBACK_TEST_STARTUP_TIMEOUT_MS || '30000', 10)
 const PLAYBACK_OBSERVATION_MS = 10_000
@@ -69,7 +68,7 @@ function selectedProfiles() {
   const profiles = raw
     ? raw.split(',').map(value => value.trim()).filter(Boolean)
     : [
-        'stable_hls',
+        'stable_mpegts',
         'transcode_720p',
         'transcode_1080p',
         'repair_1080p',
@@ -191,31 +190,6 @@ async function saveDiagnostics(args: {
     const status = await fetch(`${args.baseUrl}/api/transcode/status`).then(res => res.text())
     fs.writeFileSync(path.join(artifactDir, 'transcode-status.json'), status)
   } catch {}
-
-  const cacheRoot = path.join(args.dataPath, 'transcode-cache', '1')
-  const manifests = fs.existsSync(cacheRoot)
-    ? fs.readdirSync(cacheRoot, { recursive: true }).filter(file => String(file).endsWith('index.m3u8')).map(file => String(file))
-    : []
-  for (const manifest of manifests) {
-    const source = path.join(cacheRoot, manifest)
-    const target = path.join(artifactDir, manifest.replaceAll(path.sep, '__'))
-    fs.copyFileSync(source, target)
-  }
-
-  const segments = fs.existsSync(cacheRoot)
-    ? fs.readdirSync(cacheRoot, { recursive: true }).filter(file => String(file).endsWith('.ts')).map(file => String(file)).sort()
-    : []
-  const lastSegment = segments.at(-1)
-  if (lastSegment) {
-    const segmentPath = path.join(cacheRoot, lastSegment)
-    const probe = spawnSync(FFMPEG.replace(/ffmpeg$/, 'ffprobe'), [
-      '-hide_banner',
-      '-loglevel', 'error',
-      '-show_streams',
-      segmentPath,
-    ], { encoding: 'utf8', timeout: 10000 })
-    fs.writeFileSync(path.join(artifactDir, 'latest-segment-ffprobe.txt'), probe.stdout || probe.stderr || '')
-  }
 
   return artifactDir
 }

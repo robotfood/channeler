@@ -1,4 +1,3 @@
-import path from 'node:path'
 import { normalizeAudioProfile, type AudioProfile } from '@/lib/audio-profile'
 
 export const TRANSCODE_BACKENDS = ['vaapi', 'qsv', 'amf', 'videotoolbox', 'cpu'] as const
@@ -23,14 +22,14 @@ type EncodingBudget = {
 }
 
 const ENCODING_BUDGETS = {
-  stableHlsAudio: { audioBitrate: '192k', enhancedAudioBitrate: '384k' },
-  transcode720p: { videoBitrate: '3500k', maxrate: '3500k', bufsize: '7000k', audioBitrate: '192k', enhancedAudioBitrate: '384k' },
-  transcode1080p: { videoBitrate: '6000k', maxrate: '6000k', bufsize: '12000k', audioBitrate: '192k', enhancedAudioBitrate: '512k' },
-  repair1080p: { videoBitrate: '6000k', maxrate: '6000k', bufsize: '12000k', audioBitrate: '192k', enhancedAudioBitrate: '512k' },
-  smooth720p60Hardware: { videoBitrate: '5000k', maxrate: '5000k', bufsize: '10000k', audioBitrate: '192k', enhancedAudioBitrate: '384k' },
-  smooth720p60Software: { videoBitrate: '4500k', maxrate: '4500k', bufsize: '9000k', audioBitrate: '192k', enhancedAudioBitrate: '384k' },
-  smooth1080p60Hardware: { videoBitrate: '8500k', maxrate: '8500k', bufsize: '17000k', audioBitrate: '192k', enhancedAudioBitrate: '512k' },
-  smooth1080p60Software: { videoBitrate: '7500k', maxrate: '7500k', bufsize: '15000k', audioBitrate: '192k', enhancedAudioBitrate: '512k' },
+  mpegtsRemuxAudio: { audioBitrate: '192k', enhancedAudioBitrate: '384k' },
+  transcode720p: { videoBitrate: '3500k', maxrate: '4200k', bufsize: '7000k', audioBitrate: '192k', enhancedAudioBitrate: '384k' },
+  transcode1080p: { videoBitrate: '6000k', maxrate: '7200k', bufsize: '12000k', audioBitrate: '192k', enhancedAudioBitrate: '512k' },
+  repair1080p: { videoBitrate: '6000k', maxrate: '7500k', bufsize: '12000k', audioBitrate: '192k', enhancedAudioBitrate: '512k' },
+  smooth720p60Hardware: { videoBitrate: '5000k', maxrate: '6000k', bufsize: '10000k', audioBitrate: '192k', enhancedAudioBitrate: '384k' },
+  smooth720p60Software: { videoBitrate: '4500k', maxrate: '5500k', bufsize: '9000k', audioBitrate: '192k', enhancedAudioBitrate: '384k' },
+  smooth1080p60Hardware: { videoBitrate: '8500k', maxrate: '10000k', bufsize: '17000k', audioBitrate: '192k', enhancedAudioBitrate: '512k' },
+  smooth1080p60Software: { videoBitrate: '7500k', maxrate: '9000k', bufsize: '15000k', audioBitrate: '192k', enhancedAudioBitrate: '512k' },
 } as const
 
 const FPS = {
@@ -71,7 +70,7 @@ function bitrateArgs(videoBitrate: string, maxrate: string, bufsize: string) {
   return ['-b:v', videoBitrate, '-maxrate', maxrate, '-bufsize', bufsize]
 }
 
-function h264HlsCompatibilityArgs() {
+function h264MpegtsCompatibilityArgs() {
   return ['-bsf:v', 'dump_extra']
 }
 
@@ -83,14 +82,21 @@ function fpsArgs(fps?: number) {
   return fps ? ['-r', String(fps), '-g', String(fps * 2), '-keyint_min', String(fps * 2)] : []
 }
 
-function maxHeightScaleFilter(height: number, scaleFlags = 'bicubic') {
+function maxHeightScaleFilter(height: number, scaleFlags = 'lanczos') {
   return `scale=-2:'min(ih\\,${height})':flags=${scaleFlags}`
 }
 
 function videoToolboxFilter(filter: string) {
-  return filter.includes('yadif')
-    ? filter.replace(/yadif=[^,]+/, 'yadif_videotoolbox=mode=send_field')
-    : filter
+  const scaled = filter
+    .replace(/scale=-2:'(?:min|max)\(ih\\,\d+\)':flags=\w+/, (_match) => {
+      const height = _match.match(/\\,(\d+)/)?.[1]
+      return height ? `scale_vt=w=-2:h=${height}:color_matrix=bt709` : _match
+    })
+    .replace(/scale=-2:(\d+):flags=\w+/, 'scale_vt=w=-2:h=$1:color_matrix=bt709')
+
+  if (scaled.includes('bwdif=')) return scaled.replace(/bwdif=[^,]+/, 'yadif_videotoolbox=mode=send_field')
+  if (scaled.includes('yadif=')) return scaled.replace(/yadif=[^,]+/, 'yadif_videotoolbox=mode=send_field')
+  return scaled
 }
 
 export function encoderForBackend(backend: TranscodeBackend) {
@@ -130,19 +136,12 @@ export function qsvDeviceArgs(device: string | null, platform = process.platform
   return ['-init_hw_device', `qsv=qsv:${device}`, '-filter_hw_device', 'qsv']
 }
 
-export function hlsArgs(outputDir: string, segmentTime = 2) {
-  return [
-    '-f', 'hls',
-    '-hls_time', String(segmentTime),
-    '-hls_list_size', '10',
-    '-hls_flags', 'delete_segments+independent_segments+omit_endlist+program_date_time+temp_file+discont_start',
-    '-hls_segment_filename', path.join(outputDir, 'segment_%06d.ts'),
-    path.join(outputDir, 'index.m3u8'),
-  ]
-}
-
 export function mpegtsArgs() {
   return [
+    '-flush_packets', '1',
+    '-muxdelay', '0',
+    '-muxpreload', '0',
+    '-mpegts_flags', 'resend_headers',
     '-f', 'mpegts',
     '-fflags', '+genpts',
     'pipe:1',
@@ -158,7 +157,7 @@ function cpuH264Args(height: number, budget: EncodingBudget, audioProfile: Audio
     '-c:v', 'libx264',
     '-preset', 'veryfast',
     '-tune', 'zerolatency',
-    ...h264HlsCompatibilityArgs(),
+    ...h264MpegtsCompatibilityArgs(),
     ...forcedKeyFrameArgs(),
     '-sc_threshold', '0',
     ...bitrateArgs(budget.videoBitrate, budget.maxrate, budget.bufsize),
@@ -183,7 +182,7 @@ function hardwareH264Args(
         ? `hwupload,scale_vaapi=w=-2:h=${height}:format=nv12`
         : `${maxHeightScaleFilter(height, scaleFlags)},format=nv12,hwupload`,
       '-c:v', encoderForBackend(backend),
-      ...h264HlsCompatibilityArgs(),
+      ...h264MpegtsCompatibilityArgs(),
       ...forcedKeyFrameArgs(),
       '-sc_threshold', '0',
       '-qp', height >= 2160 ? '18' : height >= 1080 ? '21' : '23',
@@ -194,10 +193,10 @@ function hardwareH264Args(
   if (backend === 'videotoolbox') {
     return [
       ...streamMapArgs(streamMap),
-      '-vf', `${maxHeightScaleFilter(height, scaleFlags)},format=yuv420p`,
+      '-vf', `scale_vt=w=-2:h=${height}:color_matrix=bt709`,
       '-c:v', encoderForBackend(backend),
       '-realtime', 'true',
-      ...h264HlsCompatibilityArgs(),
+      ...h264MpegtsCompatibilityArgs(),
       ...forcedKeyFrameArgs(),
       '-sc_threshold', '0',
       ...bitrateArgs(budget.videoBitrate, budget.maxrate, budget.bufsize),
@@ -211,7 +210,7 @@ function hardwareH264Args(
       '-vf', `${maxHeightScaleFilter(height, scaleFlags)},format=nv12`,
       '-c:v', encoderForBackend(backend),
       '-quality', 'speed',
-      ...h264HlsCompatibilityArgs(),
+      ...h264MpegtsCompatibilityArgs(),
       ...forcedKeyFrameArgs(),
       '-sc_threshold', '0',
       ...bitrateArgs(budget.videoBitrate, budget.maxrate, budget.bufsize),
@@ -226,9 +225,7 @@ function hardwareH264Args(
       : `${maxHeightScaleFilter(height, scaleFlags)},format=nv12`,
     '-c:v', encoderForBackend(backend),
     '-preset', 'veryfast',
-    '-async_depth', '1',
-    '-bf', '0',
-    ...h264HlsCompatibilityArgs(),
+    ...h264MpegtsCompatibilityArgs(),
     ...forcedKeyFrameArgs(),
     '-sc_threshold', '0',
     ...bitrateArgs(budget.videoBitrate, budget.maxrate, budget.bufsize),
@@ -251,7 +248,7 @@ function hardwareFilteredH264Args(
       '-c:v', 'libx264',
       '-preset', 'ultrafast',
       '-tune', 'zerolatency',
-      ...h264HlsCompatibilityArgs(),
+      ...h264MpegtsCompatibilityArgs(),
       ...fpsArgs(fps),
       ...forcedKeyFrameArgs(),
       '-sc_threshold', '0',
@@ -265,7 +262,7 @@ function hardwareFilteredH264Args(
       ...streamMapArgs(streamMap),
       '-vf', filter.includes('hwupload') ? filter : `${filter},format=nv12,hwupload`,
       '-c:v', encoderForBackend(backend),
-      ...h264HlsCompatibilityArgs(),
+      ...h264MpegtsCompatibilityArgs(),
       ...fpsArgs(fps),
       ...forcedKeyFrameArgs(),
       '-sc_threshold', '0',
@@ -280,7 +277,7 @@ function hardwareFilteredH264Args(
       '-vf', videoToolboxFilter(filter),
       '-c:v', encoderForBackend(backend),
       '-realtime', 'true',
-      ...h264HlsCompatibilityArgs(),
+      ...h264MpegtsCompatibilityArgs(),
       ...fpsArgs(fps),
       ...forcedKeyFrameArgs(),
       '-sc_threshold', '0',
@@ -293,8 +290,8 @@ function hardwareFilteredH264Args(
     ...streamMapArgs(streamMap),
     '-vf', filter.includes('format=nv12') ? filter : `${filter},format=nv12`,
     '-c:v', encoderForBackend(backend),
-    ...(backend === 'qsv' ? ['-preset', 'veryfast', '-async_depth', '1', '-bf', '0'] : ['-quality', 'speed']),
-    ...h264HlsCompatibilityArgs(),
+    ...(backend === 'qsv' ? ['-preset', 'veryfast'] : ['-quality', 'speed']),
+    ...h264MpegtsCompatibilityArgs(),
     ...fpsArgs(fps),
     ...forcedKeyFrameArgs(),
     '-sc_threshold', '0',
@@ -309,19 +306,20 @@ export function profileArgs(profile: string, backend: TranscodeBackend, options:
 
   switch (profile) {
     case 'stable_hls':
+    case 'stable_mpegts':
       return [
         ...streamMapArgs(streamMap),
         '-c:v', 'copy',
-        ...audioEncodeArgs(ENCODING_BUDGETS.stableHlsAudio, audioProfile),
+        ...audioEncodeArgs(ENCODING_BUDGETS.mpegtsRemuxAudio, audioProfile),
       ]
     case 'transcode_720p':
-      return hardwareH264Args(backend, 720, ENCODING_BUDGETS.transcode720p, audioProfile, 'bicubic', streamMap)
+      return hardwareH264Args(backend, 720, ENCODING_BUDGETS.transcode720p, audioProfile, 'lanczos', streamMap)
     case 'transcode_1080p':
-      return hardwareH264Args(backend, 1080, ENCODING_BUDGETS.transcode1080p, audioProfile, 'bicubic', streamMap)
+      return hardwareH264Args(backend, 1080, ENCODING_BUDGETS.transcode1080p, audioProfile, 'lanczos', streamMap)
     case 'repair_1080p':
       return hardwareFilteredH264Args(
         backend,
-        'bwdif=mode=send_frame:parity=auto:deint=interlaced,hqdn3d=1.2:1.2:3:3,scale=-2:\'min(ih\\,1080)\':flags=bicubic,unsharp=3:3:0.25:3:3:0.12',
+        'bwdif=mode=send_frame:parity=auto:deint=interlaced,hqdn3d=1.2:1.2:3:3,scale=-2:\'min(ih\\,1080)\':flags=lanczos,unsharp=3:3:0.25:3:3:0.12',
         ENCODING_BUDGETS.repair1080p,
         audioProfile,
         FPS.broadcast,
@@ -330,11 +328,11 @@ export function profileArgs(profile: string, backend: TranscodeBackend, options:
     case 'smooth_720p60':
       if (backend === 'vaapi') return hardwareFilteredH264Args(backend, 'hwupload,deinterlace_vaapi,scale_vaapi=w=-2:h=720:format=nv12', ENCODING_BUDGETS.smooth720p60Hardware, audioProfile, FPS.smooth, streamMap)
       if (backend === 'qsv') return hardwareFilteredH264Args(backend, 'format=nv12,vpp_qsv=deinterlace=2:w=-2:h=720', ENCODING_BUDGETS.smooth720p60Hardware, audioProfile, FPS.smooth, streamMap)
-      return hardwareFilteredH264Args(backend, 'bwdif=mode=send_field:parity=auto:deint=interlaced,scale=-2:\'min(ih\\,720)\':flags=bicubic', ENCODING_BUDGETS.smooth720p60Software, audioProfile, FPS.smooth, streamMap)
+      return hardwareFilteredH264Args(backend, 'bwdif=mode=send_field:parity=auto:deint=interlaced,scale=-2:\'min(ih\\,720)\':flags=lanczos', ENCODING_BUDGETS.smooth720p60Software, audioProfile, FPS.smooth, streamMap)
     case 'smooth_1080p60':
       if (backend === 'vaapi') return hardwareFilteredH264Args(backend, 'hwupload,deinterlace_vaapi,scale_vaapi=w=-2:h=1080:format=nv12', ENCODING_BUDGETS.smooth1080p60Hardware, audioProfile, FPS.smooth, streamMap)
       if (backend === 'qsv') return hardwareFilteredH264Args(backend, 'format=nv12,vpp_qsv=deinterlace=2:w=-2:h=1080', ENCODING_BUDGETS.smooth1080p60Hardware, audioProfile, FPS.smooth, streamMap)
-      return hardwareFilteredH264Args(backend, 'bwdif=mode=send_field:parity=auto:deint=interlaced,scale=-2:\'min(ih\\,1080)\':flags=bicubic', ENCODING_BUDGETS.smooth1080p60Software, audioProfile, FPS.smooth, streamMap)
+      return hardwareFilteredH264Args(backend, 'bwdif=mode=send_field:parity=auto:deint=interlaced,scale=-2:\'min(ih\\,1080)\':flags=lanczos', ENCODING_BUDGETS.smooth1080p60Software, audioProfile, FPS.smooth, streamMap)
     default:
       if (options.unknownProfile === 'throw') throw new Error(`Unknown profile: ${profile}`)
       return [...streamMapArgs(streamMap), '-c', 'copy']

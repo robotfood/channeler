@@ -40,9 +40,9 @@ const PLAYBACK_PROFILES = [
     quality: 'No changes',
   },
   {
-    value: 'stable_hls',
-    label: 'Stable HLS remux',
-    detail: 'Repackages the source into local HLS segments for steadier playback, without re-encoding. Ideal buffer: large.',
+    value: 'stable_mpegts',
+    label: 'MPEG-TS remux',
+    detail: 'Repackages the source into a continuous MPEG-TS stream without re-encoding. Ideal buffer: large.',
     fps: 'Source',
     res: 'Source',
     quality: 'No changes',
@@ -50,7 +50,7 @@ const PLAYBACK_PROFILES = [
   {
     value: 'transcode_720p',
     label: 'Compatibility 720p',
-    detail: 'Converts to H.264 HLS and caps video at 720p for broad device support and lower bandwidth.',
+    detail: 'Converts to H.264 MPEG-TS and caps video at 720p for broad device support and lower bandwidth.',
     fps: 'Source',
     res: 'Max 720p',
     quality: 'Compatibility',
@@ -58,7 +58,7 @@ const PLAYBACK_PROFILES = [
   {
     value: 'transcode_1080p',
     label: 'Compatibility 1080p',
-    detail: 'Converts to H.264 HLS and caps video at 1080p while preserving source frame rate.',
+    detail: 'Converts to H.264 MPEG-TS and caps video at 1080p while preserving source frame rate.',
     fps: 'Source',
     res: 'Max 1080p',
     quality: 'Compatibility',
