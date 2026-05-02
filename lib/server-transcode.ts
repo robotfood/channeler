@@ -33,6 +33,19 @@ const streamSessions = new Map<string, StreamSession>()
 
 let detectedHardwareBackend: Exclude<HardwareBackend, 'auto'> | null = null
 let hardwareProbeResults: Partial<Record<Exclude<HardwareBackend, 'auto'>, string>> = {}
+let qsvFallbackToDirectInit = false
+
+const QSV_VAAPI_ERROR_PATTERNS = [
+  'unsupported picture structure',
+  'unsupported resolution',
+  'unsupported pixel format',
+  'error during encoding',
+]
+
+function isQsvVaapiError(message: string) {
+  const lower = message.toLowerCase()
+  return QSV_VAAPI_ERROR_PATTERNS.some(p => lower.includes(p))
+}
 
 function hardwareBackend(value = process.env.TRANSCODE_BACKEND): HardwareBackend {
   value = value?.toLowerCase()
@@ -58,10 +71,15 @@ export function transcodeRenderDevicePath() {
 }
 
 function qsvDeviceArgs() {
+  if (qsvFallbackToDirectInit) {
+    // vaapi-derived init failed on this host (Xeon/server GPU); use direct QSV init instead
+    return ['-init_hw_device', 'qsv=qsv:hw', '-filter_hw_device', 'qsv']
+  }
   return qsvDeviceArgsForDevice(transcodeRenderDevicePath())
 }
 
 function qsvInitMode() {
+  if (qsvFallbackToDirectInit) return 'direct-hw'
   if (!transcodeRenderDevicePath()) return 'implicit'
   return process.platform === 'linux' ? 'vaapi-derived' : 'direct'
 }
@@ -141,7 +159,33 @@ function testHardwareBackend(backend: Exclude<HardwareBackend, 'auto' | 'cpu'>, 
     return 'ok'
   } catch (err) {
     const message = execErrorOutput(err).trim()
-    return message.slice(-1000)
+    const result = message.slice(-1000)
+
+    // On Linux, vaapi-derived QSV init fails on Xeon/server GPUs with format/structure errors
+    // even when QSV itself works. Retry with direct QSV init before declaring failure.
+    if (
+      backend === 'qsv' &&
+      process.platform === 'linux' &&
+      !qsvFallbackToDirectInit &&
+      transcodeRenderDevicePath() &&
+      isQsvVaapiError(result)
+    ) {
+      console.log(`[transcode] QSV vaapi-derived init failed, retrying with direct init: ${result.slice(0, 120)}`)
+      qsvFallbackToDirectInit = true
+      try {
+        execFileSync(process.env.FFMPEG_PATH || 'ffmpeg', probeArgsForBackend(backend), {
+          encoding: 'utf8',
+          timeout: 8000,
+        })
+        console.log('[transcode] QSV direct init succeeded')
+        return 'ok'
+      } catch (retryErr) {
+        qsvFallbackToDirectInit = false
+        return execErrorOutput(retryErr).trim().slice(-1000)
+      }
+    }
+
+    return result
   }
 }
 
