@@ -1,5 +1,5 @@
 import type { Metadata } from 'next'
-import './globals.css'
+import '../globals.css'
 import Link from 'next/link'
 import ThemeToggle from '@/components/theme-toggle'
 import Script from 'next/script'
@@ -22,7 +22,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             if (t === 'dark') document.documentElement.classList.add('dark');
             else document.documentElement.classList.remove('dark');
           })();
-          
+
           window.__onGCastApiAvailable = function(isAvailable) {
             if (isAvailable) {
               cast.framework.CastContext.getInstance().setOptions({

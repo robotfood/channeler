@@ -11,7 +11,7 @@ import {
   type TranscodeBackend,
   vaapiDeviceArgs as vaapiDeviceArgsForDevice,
 } from '../lib/ffmpeg-transcode-args'
-import { normalizePlaybackProfile } from '../lib/playback-profile'
+import { normalizePlaybackProfile, type PlaybackProfile } from '../lib/playback-profile'
 import { normalizeAudioProfile } from '../lib/audio-profile'
 
 const FFMPEG = process.env.FFMPEG_PATH || 'ffmpeg'
@@ -48,7 +48,7 @@ function selectedBackends(): Backend[] {
   return values.filter((value): value is Backend => BACKENDS.includes(value as Backend))
 }
 
-function selectedProfiles() {
+function selectedProfiles(): PlaybackProfile[] {
   const raw = optionValue('--profiles') || process.env.TRANSCODE_TEST_PROFILES
   if (raw) {
     return raw.split(',').map(value => {
@@ -58,7 +58,7 @@ function selectedProfiles() {
     }).filter(Boolean)
   }
 
-  const base = [
+  const base: PlaybackProfile[] = [
     'stable_mpegts',
   ]
 
@@ -197,7 +197,7 @@ function validateMpegts(output: Buffer) {
   return 'ok'
 }
 
-function runProfile(profile: string, backend: Backend, root: string, stableInput: string, encoders: string): Result {
+function runProfile(profile: PlaybackProfile, backend: Backend, root: string, stableInput: string, encoders: string): Result {
   const encoder = encoderForBackend(backend)
   if (backend !== 'cpu' && !encoders.includes(encoder)) {
     return {
@@ -230,7 +230,6 @@ function runProfile(profile: string, backend: Backend, root: string, stableInput
     ...profileArgs(profile, backend, {
       audioInputIndex: profile === 'stable_mpegts' ? 0 : 1,
       audioProfile: AUDIO_PROFILE,
-      unknownProfile: 'throw',
     }),
     ...mpegtsArgs(),
   ], {

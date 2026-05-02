@@ -1,4 +1,5 @@
 import { normalizeAudioProfile, type AudioProfile } from '@/lib/audio-profile'
+import type { PlaybackProfile } from '@/lib/playback-profile'
 
 export const TRANSCODE_BACKENDS = ['vaapi', 'qsv', 'amf', 'videotoolbox', 'cpu'] as const
 export type TranscodeBackend = typeof TRANSCODE_BACKENDS[number]
@@ -10,7 +11,6 @@ type StreamMap = {
 
 type ProfileArgsOptions = StreamMap & {
   audioProfile?: string | null
-  unknownProfile?: 'copy' | 'throw'
 }
 
 type EncodingBudget = {
@@ -30,7 +30,7 @@ const AUDIO_FILTERS = {
 } as const
 
 function streamMapArgs({ videoInputIndex = 0, audioInputIndex = 0 }: StreamMap = {}) {
-  return ['-map', `${videoInputIndex}:v:0?`, '-map', `${audioInputIndex}:a:0?`]
+  return ['-map', `${videoInputIndex}:v:0?`, '-map', `${audioInputIndex}:a:0?`, '-map', `${videoInputIndex}:s?`, '-c:s', 'copy']
 }
 
 function audioEncodeArgs(budget: Pick<EncodingBudget, 'audioBitrate' | 'enhancedAudioBitrate'>, audioProfile: AudioProfile) {
@@ -107,12 +107,11 @@ export function mpegtsArgs() {
   ]
 }
 
-export function profileArgs(profile: string, backend: TranscodeBackend, options: ProfileArgsOptions = {}) {
+export function profileArgs(profile: PlaybackProfile, backend: TranscodeBackend, options: ProfileArgsOptions = {}) {
   const streamMap = { videoInputIndex: options.videoInputIndex, audioInputIndex: options.audioInputIndex }
   const audioProfile = normalizeAudioProfile(options.audioProfile)
 
   switch (profile) {
-    case 'stable_hls':
     case 'stable_mpegts':
       return [
         ...streamMapArgs(streamMap),
@@ -169,8 +168,12 @@ export function profileArgs(profile: string, backend: TranscodeBackend, options:
         ...audioEncodeArgs(ENCODING_BUDGETS.mpegtsRemuxAudio, audioProfile),
       ]
     }
-    default:
-      if (options.unknownProfile === 'throw') throw new Error(`Unknown profile: ${profile}`)
+    case 'direct':
+    case 'proxy':
       return [...streamMapArgs(streamMap), '-c', 'copy']
+    default: {
+      const _exhaustive: never = profile
+      throw new Error(`Unhandled profile: ${_exhaustive}`)
+    }
   }
 }

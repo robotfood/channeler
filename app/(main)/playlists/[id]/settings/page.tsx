@@ -1,5 +1,5 @@
 import { notFound } from 'next/navigation'
-import PlaylistSettingsClient from '@/app/playlists/[id]/settings/playlist-settings-client'
+import PlaylistSettingsClient from './playlist-settings-client'
 import { getPlaylistData, type PlaylistData } from '@/lib/app-data'
 
 function toPlaylistSettings(data: PlaylistData) {

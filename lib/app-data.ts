@@ -119,6 +119,26 @@ export async function getFavoriteChannels() {
     ))
 }
 
+export async function getChannelWithPlaylist(channelId: number) {
+  const [row] = await db
+    .select({
+      id: channels.id,
+      displayName: channels.displayName,
+      streamUrl: channels.streamUrl,
+      isFavorite: channels.isFavorite,
+      playlistId: channels.playlistId,
+      bufferSize: playlists.bufferSize,
+      playbackProfile: playlists.playbackProfile,
+      transcodeBackend: playlists.transcodeBackend,
+      proxyStreams: playlists.proxyStreams,
+    })
+    .from(channels)
+    .innerJoin(playlists, eq(channels.playlistId, playlists.id))
+    .where(eq(channels.id, channelId))
+  return row ?? null
+}
+
 export type DashboardPlaylist = Awaited<ReturnType<typeof getDashboardPlaylists>>[number]
 export type PlaylistData = NonNullable<Awaited<ReturnType<typeof getPlaylistData>>>
 export type PlaylistSettingsData = Omit<PlaylistData, 'groups' | 'channels'>
+export type ChannelWithPlaylist = NonNullable<Awaited<ReturnType<typeof getChannelWithPlaylist>>>

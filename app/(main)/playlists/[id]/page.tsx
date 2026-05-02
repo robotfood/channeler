@@ -1,5 +1,5 @@
 import { notFound } from 'next/navigation'
-import PlaylistEditorClient from '@/app/playlists/[id]/playlist-editor-client'
+import PlaylistEditorClient from './playlist-editor-client'
 import { getPlaylistData } from '@/lib/app-data'
 
 export default async function PlaylistEditorPage(props: PageProps<'/playlists/[id]'>) {

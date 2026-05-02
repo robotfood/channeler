@@ -148,3 +148,10 @@ Set up a GitHub Actions workflow that triggers on push to `main`:
 - [x] Fix Intel QSV probe on Xeon/Unraid Docker when `/dev/dri` is passed through but FFmpeg reports unsupported picture structure/resolution/pixel format and falls back to CPU
 - [x] Add stream session dashboard with current process/client health
 - [ ] Evaluate `node-av` for future in-process media pipelines or managed FFmpeg binary access; keep current child-process FFmpeg path unless it clearly reduces deployment/runtime risk
+- [ ] Subtitle burn-in during transcoding
+  - Core approach: burn subtitles into the video frames during FFmpeg transcoding (universal — works for DVB bitmap and text subs; browser can't render either natively)
+  - Tradeoff: subtitles can't be toggled off without restarting the stream
+  - Phase 1 — Detection: new `probeSubtitleStreams(url)` in `lib/stream-probe.ts` using `ffprobe -show_streams -select_streams s`; returns `{ index, codec, language }[]`; called lazily on user request (not at stream start — probing a live stream has 3–10s latency); exposed via `/api/channels/[id]/probe`
+  - Phase 2 — Burn-in FFmpeg args (`lib/ffmpeg-transcode-args.ts`): bitmap subs (`dvb_subtitle`, `hdmv_pgs`): `-filter_complex "[0:v][0:s:0]overlay[v]"`; text subs (`ass`, `srt`, `mov_text`): `-filter_complex "[0:s:0]ass[sub];[0:v][sub]overlay[v]"`; both require video re-encode (no `-c:v copy` with a filter graph); for already-transcoding profiles this is free; `stable_mpegts` copy becomes a re-encode when subs are on
+  - Phase 3 — Session flag: add `subtitleIndex: number | null` to `spawnMpegtsStream`; when set, inject burn-in args; when null, behaves as today
+  - Phase 4 — Player UI: CC button in toolbar; on click calls probe endpoint and shows track dropdown (language + codec); selecting a track restarts the stream with `subtitleIndex` set; deselecting restarts without it; `stable_mpegts` with subs active should show in the status bar that video is being re-encoded

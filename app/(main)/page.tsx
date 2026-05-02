@@ -1,6 +1,6 @@
 import { headers } from 'next/headers'
 import { connection } from 'next/server'
-import DashboardClient from '@/app/dashboard-client'
+import DashboardClient from './dashboard-client'
 import { getDashboardPlaylists, getFavoriteChannels } from '@/lib/app-data'
 
 function firstHeaderValue(value: string | null) {

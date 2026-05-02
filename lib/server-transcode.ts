@@ -27,6 +27,7 @@ type StreamSession = {
 
 const FORCE_KILL_TIMEOUT_MS = 5_000
 const HARDWARE_BACKENDS = ['auto', ...TRANSCODE_BACKENDS] as const
+let sessionCounter = 0
 const HARDWARE_PROBE_ORDER: Array<Exclude<HardwareBackend, 'auto' | 'cpu'>> =
   process.platform === 'darwin' ? ['videotoolbox', 'qsv', 'amf', 'vaapi'] : ['vaapi', 'qsv', 'amf', 'videotoolbox']
 const streamSessions = new Map<string, StreamSession>()
@@ -47,9 +48,13 @@ function isQsvVaapiError(message: string) {
   return QSV_VAAPI_ERROR_PATTERNS.some(p => lower.includes(p))
 }
 
+function isHardwareBackend(v: string): v is HardwareBackend {
+  return (HARDWARE_BACKENDS as readonly string[]).includes(v)
+}
+
 function hardwareBackend(value = process.env.TRANSCODE_BACKEND): HardwareBackend {
-  value = value?.toLowerCase()
-  if (HARDWARE_BACKENDS.includes(value as HardwareBackend)) return value as HardwareBackend
+  const lower = value?.toLowerCase()
+  if (lower && isHardwareBackend(lower)) return lower
   return 'auto'
 }
 
@@ -227,7 +232,7 @@ function probeRecommendedHardwareBackend(): Exclude<HardwareBackend, 'auto'> {
 }
 
 function sessionKey(channelId: number, profile: PlaybackProfile, backend: Exclude<HardwareBackend, 'auto'>, audioProfile: AudioProfile, pid: number | undefined) {
-  return `${channelId}:${profile}:${backend}:${audioProfile}:${pid ?? 'unknown'}`
+  return `${channelId}:${profile}:${backend}:${audioProfile}:${pid ?? `seq${++sessionCounter}`}`
 }
 
 export function registerStreamSession(args: {

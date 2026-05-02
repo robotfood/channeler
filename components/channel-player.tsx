@@ -104,7 +104,6 @@ export default function ChannelPlayer({ url, title, channelId, playlistId, buffe
   const [reconnectMessage, setReconnectMessage] = useState<string | null>(null)
   const [isStoppingTranscode, setIsStoppingTranscode] = useState(false)
   const [transcodeStopped, setTranscodeStopped] = useState(false)
-  const [isPiP, setIsPiP] = useState(false)
   const playerRef = useRef<Mpegts.Player | null>(null)
   const retryCountRef = useRef(0)
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -284,24 +283,8 @@ export default function ChannelPlayer({ url, title, channelId, playlistId, buffe
     setIsStoppingTranscode(false)
   }
 
-  useEffect(() => {
-    const video = videoRef.current
-    if (!video) return
-    const handler = () => setIsPiP(false)
-    video.addEventListener('leavepictureinpicture', handler)
-    return () => video.removeEventListener('leavepictureinpicture', handler)
-  }, [])
-
-  async function togglePiP() {
-    const video = videoRef.current
-    if (!video) return
-    if (document.pictureInPictureElement) {
-      await document.exitPictureInPicture()
-      setIsPiP(false)
-    } else {
-      await video.requestPictureInPicture()
-      setIsPiP(true)
-    }
+  function openInWindow() {
+    window.open(`/watch/${channelId}`, '_blank', 'popup,width=960,height=620')
   }
 
   useEffect(() => {
@@ -615,18 +598,15 @@ export default function ChannelPlayer({ url, title, channelId, playlistId, buffe
             </button>
           )}
 
-          {typeof document !== 'undefined' && document.pictureInPictureEnabled && (
-            <button
-              onClick={togglePiP}
-              className={`p-1 rounded transition-colors ${isPiP ? 'text-blue-400 hover:text-blue-300' : 'text-gray-400 hover:text-white hover:bg-gray-800'}`}
-              title={isPiP ? 'Exit picture-in-picture' : 'Pop out'}
-            >
-              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 9h4.5A1.5 1.5 0 0121 10.5v7a1.5 1.5 0 01-1.5 1.5h-7A1.5 1.5 0 0111 17.5V13" />
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 3h8v8H3z" />
-              </svg>
-            </button>
-          )}
+          <button
+            onClick={openInWindow}
+            className="p-1 rounded transition-colors text-gray-400 hover:text-white hover:bg-gray-800"
+            title="Pop out to window"
+          >
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+            </svg>
+          </button>
           {/* @ts-expect-error google-cast-launcher is a custom element from Cast SDK */}
           <google-cast-launcher />
           <button onClick={toggleFavorite} className={`transition-colors ${isFavorite ? 'text-yellow-500 hover:text-yellow-400' : 'text-gray-400 hover:text-white'}`} title={isFavorite ? 'Remove from favourites' : 'Add to favourites'}>
