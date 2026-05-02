@@ -137,6 +137,15 @@ export function profileArgs(profile: string, _backend: TranscodeBackend, options
         '-vf', 'scale=-2:1080:flags=lanczos,unsharp=3:3:0.5',
         ...audioEncodeArgs(ENCODING_BUDGETS.mpegtsRemuxAudio, audioProfile),
       ]
+    case 'upscale_4k':
+      return [
+        ...streamMapArgs(streamMap),
+        '-c:v', 'libx264',
+        '-preset', 'veryfast',
+        '-crf', '16',
+        '-vf', 'scale=-2:2160:flags=lanczos,unsharp=3:3:0.5',
+        ...audioEncodeArgs(ENCODING_BUDGETS.mpegtsRemuxAudio, audioProfile),
+      ]
     default:
       if (options.unknownProfile === 'throw') throw new Error(`Unknown profile: ${profile}`)
       return [...streamMapArgs(streamMap), '-c', 'copy']
